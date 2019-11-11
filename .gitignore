@@ -1,2 +1,4 @@
 .idea/
-build/
+
+/build/_workspace/
+/build/bin/

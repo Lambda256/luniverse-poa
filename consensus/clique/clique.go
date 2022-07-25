@@ -348,9 +348,9 @@ func (c *Clique) verifyHeader(chain consensus.ChainReader, header *types.Header,
 
 	// TODO: Need more enhancement on validity check of seal timestamp
 	sealTimestamp := c.ExtractSealTimeUint64(header)
-	log.Info("Verifying seal timestamp", "Number", header.Number.Uint64(), "header.Time", header.Time.Uint64(), "seal-Timestamp", sealTimestamp, "diff", sealTimestamp - (header.Time.Uint64() * 1000))
-	if header.Time.Uint64() * 1000 >= sealTimestamp {
-		log.Error("Incorrect seal timestamp", "Number", header.Number.Uint64(), "header.Time", header.Time.Uint64(), "seal-Timestamp", sealTimestamp)
+	log.Info("Verifying header", "Number", header.Number.Uint64(), "header.Time", header.Time.Uint64()*1000, "seal-Timestamp", sealTimestamp, "diff", sealTimestamp - (header.Time.Uint64() * 1000))
+	if header.Time.Uint64() * 1000 > sealTimestamp {
+		log.Error(">>> Incorrect seal timestamp", "Number", header.Number.Uint64(), "header.Time", header.Time.Uint64()*1000, "seal-Timestamp", sealTimestamp, "hash", header.Hash())
 		return errInvalidSealTimestamp
 	}
 

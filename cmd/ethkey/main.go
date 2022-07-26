@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ethereum/go-ethereum/cmd/utils"
+	"github.com/ethereum/go-ethereum/internal/flags"
 	"gopkg.in/urfave/cli.v1"
 )
 
@@ -30,32 +30,31 @@ const (
 
 // Git SHA1 commit hash of the release (set via linker flags)
 var gitCommit = ""
+var gitDate = ""
 
 var app *cli.App
 
 func init() {
-	app = utils.NewApp(gitCommit, "an Ethereum key manager")
+	app = flags.NewApp(gitCommit, gitDate, "an Ethereum key manager")
 	app.Commands = []cli.Command{
 		commandGenerate,
 		commandInspect,
+		commandChangePassphrase,
 		commandSignMessage,
 		commandVerifyMessage,
 	}
+	cli.CommandHelpTemplate = flags.OriginCommandHelpTemplate
 }
 
 // Commonly used command line flags.
 var (
 	passphraseFlag = cli.StringFlag{
 		Name:  "passwordfile",
-		Usage: "the file that contains the passphrase for the keyfile",
+		Usage: "the file that contains the password for the keyfile",
 	}
 	jsonFlag = cli.BoolFlag{
 		Name:  "json",
 		Usage: "output JSON instead of human-readable format",
-	}
-	messageFlag = cli.StringFlag{
-		Name:  "message",
-		Usage: "the file that contains the message to sign/verify",
 	}
 )
 

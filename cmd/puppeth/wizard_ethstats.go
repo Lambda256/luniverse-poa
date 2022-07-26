@@ -63,20 +63,20 @@ func (w *wizard) deployEthstats() {
 		fmt.Printf("What should be the secret password for the API? (default = %s)\n", infos.secret)
 		infos.secret = w.readDefaultString(infos.secret)
 	}
-	// Gather any blacklists to ban from reporting
+	// Gather any banned lists to ban from reporting
 	if existed {
 		fmt.Println()
-		fmt.Printf("Keep existing IP %v blacklist (y/n)? (default = yes)\n", infos.banned)
-		if w.readDefaultString("y") != "y" {
+		fmt.Printf("Keep existing IP %v in the banned list (y/n)? (default = yes)\n", infos.banned)
+		if !w.readDefaultYesNo(true) {
 			// The user might want to clear the entire list, although generally probably not
 			fmt.Println()
-			fmt.Printf("Clear out blacklist and start over (y/n)? (default = no)\n")
-			if w.readDefaultString("n") != "n" {
+			fmt.Printf("Clear out the banned list and start over (y/n)? (default = no)\n")
+			if w.readDefaultYesNo(false) {
 				infos.banned = nil
 			}
 			// Offer the user to explicitly add/remove certain IP addresses
 			fmt.Println()
-			fmt.Println("Which additional IP addresses should be blacklisted?")
+			fmt.Println("Which additional IP addresses should be in the banned list?")
 			for {
 				if ip := w.readIPAddress(); ip != "" {
 					infos.banned = append(infos.banned, ip)
@@ -85,7 +85,7 @@ func (w *wizard) deployEthstats() {
 				break
 			}
 			fmt.Println()
-			fmt.Println("Which IP addresses should not be blacklisted?")
+			fmt.Println("Which IP addresses should not be in the banned list?")
 			for {
 				if ip := w.readIPAddress(); ip != "" {
 					for i, addr := range infos.banned {
@@ -106,7 +106,7 @@ func (w *wizard) deployEthstats() {
 	if existed {
 		fmt.Println()
 		fmt.Printf("Should the ethstats be built from scratch (y/n)? (default = no)\n")
-		nocache = w.readDefaultString("n") != "n"
+		nocache = w.readDefaultYesNo(false)
 	}
 	trusted := make([]string, 0, len(w.servers))
 	for _, client := range w.servers {

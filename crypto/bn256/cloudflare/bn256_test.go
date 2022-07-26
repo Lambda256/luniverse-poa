@@ -1,5 +1,3 @@
-// +build amd64,!appengine,!gccgo
-
 package bn256
 
 import (
@@ -91,6 +89,19 @@ func TestTripartiteDiffieHellman(t *testing.T) {
 
 	if !bytes.Equal(k1Bytes, k2Bytes) || !bytes.Equal(k2Bytes, k3Bytes) {
 		t.Errorf("keys didn't agree")
+	}
+}
+
+func TestG2SelfAddition(t *testing.T) {
+	s, _ := rand.Int(rand.Reader, Order)
+	p := new(G2).ScalarBaseMult(s)
+
+	if !p.p.IsOnCurve() {
+		t.Fatal("p isn't on curve")
+	}
+	m := p.Add(p, p).Marshal()
+	if _, err := p.Unmarshal(m); err != nil {
+		t.Fatalf("p.Add(p, p) ∉ G₂: %v", err)
 	}
 }
 

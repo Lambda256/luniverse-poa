@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"reflect"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -175,9 +174,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	}
 	log.Info("Initialising Ethereum protocol", "network", config.NetworkId, "dbversion", dbVer)
 
-	if reflect.TypeOf(&clique.Clique{}) == reflect.TypeOf(eth.engine.(*beacon.Beacon).InnerEngine()) {
+	if cliqueEngine, ok := eth.engine.(*beacon.Beacon).InnerEngine().(*clique.Clique); ok {
 		log.Info("Initializing consensus.clique...")
-		eth.engine.(*beacon.Beacon).InnerEngine().(*clique.Clique).Initialize(eth, eth)
+		cliqueEngine.Initialize(eth, eth)
 	}
 
 	if !config.SkipBcVersionCheck {

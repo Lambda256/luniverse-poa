@@ -181,7 +181,7 @@ func RetrieveConsensusConfigurations(chain ChainContext, header *types.Header, s
 	txContext := NewEVMTxContext(msg)
 	blockContext := NewEVMBlockContext(header, chain, nil)
 	evm := vm.NewEVM(blockContext, txContext, statedb, chainConfig, vm.Config{})
-	res, _, vmerr := evm.Call(vm.AccountRef(msg.From()), vm.AccountRef(*msg.To()).Address(), msg.Data(), msg.Gas(), msg.Value())
+	res, _, vmerr := evm.StaticCall(vm.AccountRef(msg.From()), vm.AccountRef(*msg.To()).Address(), msg.Data(), msg.Gas())
 	if vmerr != nil {
 		// The only possible consensus-error would be if there wasn't
 		// sufficient balance to make the transfer happen. The first

@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"math/big"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -642,7 +641,8 @@ func (w *worker) resultLoop() {
 				sealhash = w.engine.SealHash(block.Header())
 				hash     = block.Hash()
 			)
-			if reflect.TypeOf(&clique.Clique{}) == reflect.TypeOf(w.engine.(*beacon.Beacon).InnerEngine()) {
+
+			if _, ok := w.engine.(*beacon.Beacon).InnerEngine().(*clique.Clique); ok {
 				sealhash = clique.SealHashWithoutTimestamp(block.Header()) // in case clique, reassign it to avoid key mismatch!
 			}
 

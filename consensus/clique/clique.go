@@ -608,6 +608,7 @@ func (c *Clique) verifySeal(chain consensus.ChainHeaderReader, header *types.Hea
 	if _, ok := snap.Signers[signer]; !ok {
 		return errUnauthorizedSigner
 	}
+
 	/*
 		for seen, recent := range snap.Recents {
 			if recent == signer {
@@ -618,6 +619,7 @@ func (c *Clique) verifySeal(chain consensus.ChainHeaderReader, header *types.Hea
 			}
 		}
 	*/
+
 	// Ensure that the difficulty corresponds to the turn-ness of the signer
 	if !c.fakeDiff {
 		inturn, _ := snap.inturn(header.Number.Uint64(), signer)
@@ -888,6 +890,7 @@ func (c *Clique) Seal(consensusConfig *common.ConsensusConfig, chain consensus.C
 	if _, authorized := snap.Signers[signer]; !authorized {
 		return errUnauthorizedSigner
 	}
+
 	/*
 		// If we're amongst the recent signers, wait for the next block
 		for seen, recent := range snap.Recents {
@@ -899,6 +902,7 @@ func (c *Clique) Seal(consensusConfig *common.ConsensusConfig, chain consensus.C
 			}
 		}
 	*/
+
 	// Sweet, the protocol permits us to sign the block, wait for our time
 	now := time.Now()
 	delay := time.Unix(int64(header.Time), 0).Sub(now) // nolint: gosimple

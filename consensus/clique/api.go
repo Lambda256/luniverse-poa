@@ -274,7 +274,7 @@ func GetBoardMembers(chainConfig *params.ChainConfig, header *types.Header, chai
 	txContext := core.NewEVMTxContext(msg)
 
 	evm := vm.NewEVM(context, txContext, state, chainConfig, vm.Config{NoBaseFee: true})
-	res, _, vmerr := evm.Call(vm.AccountRef(msg.From()), vm.AccountRef(*msg.To()).Address(), msg.Data(), msg.Gas(), msg.Value())
+	res, _, vmerr := evm.StaticCall(vm.AccountRef(msg.From()), vm.AccountRef(*msg.To()).Address(), msg.Data(), msg.Gas())
 	if vmerr != nil {
 		// The only possible consensus-error would be if there wasn't
 		// sufficient balance to make the transfer happen. The first

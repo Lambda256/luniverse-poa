@@ -221,15 +221,29 @@ func (st *StateTransition) buyGas() error {
 		balanceCheck = balanceCheck.Mul(balanceCheck, st.gasFeeCap)
 		balanceCheck.Add(balanceCheck, st.value)
 	}
+	totalGas := st.msg.Gas()
 
 	if st.msg.ChainConfig().GasFree != nil {
 		sender = st.msg.ChainConfig().GasFree.Payer
 	} else if st.msg.GasDelegator() != nil {
 		gasDelegationContractAddr := st.msg.GasDelegator()
 		///////////////////////////////////////////////////////////////////////////////////////////
-		err := checkWhitelist(*gasDelegationContractAddr, sender, mgval, state, st.evm)
+		checkerGasUsed, err := checkWhitelist(st.consensusConfig, *gasDelegationContractAddr, sender, mgval, state, st.evm)
 		if err != nil {
 			return err
+		}
+		if st.msg.ChainConfig().GlobalDC != nil && st.msg.ChainConfig().IsTheBalanceGlobalDCBlock(st.evm.Context.BlockNumber) {
+			// Account gas consumed by checkWhitelist()
+			totalGas += checkerGasUsed
+
+			// Charge gas consumed by checkWhitelist() to the delegator
+			delegatorExpense := new(big.Int).SetUint64(checkerGasUsed)
+			delegatorExpense.Mul(delegatorExpense, st.gasPrice)
+			balanceCheck.Add(balanceCheck, delegatorExpense)
+			mgval.Add(mgval, delegatorExpense)
+
+			// Do not account for msg.value of original sender
+			balanceCheck.Sub(balanceCheck, st.value)
 		} ///////////////////////////////////////////////////////////////////////////////////////////
 		sender = *gasDelegationContractAddr
 	} else if st.msg.ChainConfig().GlobalDC != nil && st.msg.ChainConfig().IsTheBalanceGlobalDCBlock(st.evm.Context.BlockNumber) {
@@ -241,14 +255,26 @@ func (st *StateTransition) buyGas() error {
 			if state.GetBalance(gasDelegationContractAddr).Cmp(insufficientMgval) < 0 {
 				return errInsufficientBalanceForGas
 			}
-			if err := st.gp.SubGas(st.msg.Gas()); err != nil {
+			if err := st.gp.SubGas(totalGas); err != nil {
 				return err
 			}
 			///////////////////////////////////////////////////////////////////////////////////////////
-			err := useGasPoint(gasDelegationContractAddr, sender, insufficientMgval, state, st.evm)
+			_, err := useGasPoint(st.consensusConfig, gasDelegationContractAddr, sender, insufficientMgval, state, st.evm)
 			if err != nil {
 				return err
-			} ///////////////////////////////////////////////////////////////////////////////////////////
+			}
+			// Account gas consumed by useGasPoint()
+			//totalGas += checkerGasUsed
+
+			// Charge gas consumed by useGasPoint() to the delegator
+			//delegatorExpense := new(big.Int).SetUint64(checkerGasUsed)
+			//delegatorExpense.Mul(delegatorExpense, st.gasPrice)
+			//balanceCheck.Add(balanceCheck, delegatorExpense)
+			//mgval.Add(mgval, delegatorExpense)
+
+			// Do not account for msg.value of original sender
+			//balanceCheck.Sub(balanceCheck, st.value)
+			///////////////////////////////////////////////////////////////////////////////////////////
 			st.gas += st.msg.Gas()
 			st.initialGas = st.msg.Gas()
 			state.SubBalance(sender, balance)                              // make sender's balance to be zero
@@ -256,7 +282,7 @@ func (st *StateTransition) buyGas() error {
 			st.splitGasPaid = true                                         // mark as gas payment was split
 		} else {
 			// OK. Original sender will pay for all gas!
-			if err := st.gp.SubGas(st.msg.Gas()); err != nil {
+			if err := st.gp.SubGas(totalGas); err != nil {
 				return err
 			}
 			st.gas += st.msg.Gas()
@@ -268,7 +294,7 @@ func (st *StateTransition) buyGas() error {
 	if have, want := state.GetBalance(sender), balanceCheck; have.Cmp(want) < 0 {
 		return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, sender.Hex(), have, want)
 	}
-	if err := st.gp.SubGas(st.msg.Gas()); err != nil {
+	if err := st.gp.SubGas(totalGas); err != nil {
 		return err
 	}
 	st.gas += st.msg.Gas()
@@ -367,12 +393,14 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			st.state.SetNonce(sender, st.state.GetNonce(sender)+1)
 
 			// reset `err` to nil (to suppress snapshot rollback)
-			err = nil
+			//err = nil
 
 			//// mark as failed to indicate the failure of tx execution to receipt
 			//failed = true
 
 			log.Info("Delegator whitelist check failed!  Not registered or inssuficient gas point case.", "sender", sender.String(), "err", err)
+
+			return &ExecutionResult{UsedGas: st.gasUsed(), Err: err, ReturnData: nil}, nil
 		}
 		return nil, err
 	}
@@ -514,19 +542,19 @@ func (st *StateTransition) gasUsed() uint64 {
 	return st.initialGas - st.gas
 }
 
-func checkWhitelist(dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) error {
-	return callDC(dcAddr, sender, mgval, state, evm, "d088070a000000000000000000000000")
+func checkWhitelist(consensusConfig *common.ConsensusConfig, dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
+	return callDC(consensusConfig, dcAddr, sender, mgval, state, evm, "d088070a000000000000000000000000", true)
 }
 
-func useGasPoint(dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) error {
-	return callDC(dcAddr, sender, mgval, state, evm, "aa75506b000000000000000000000000")
+func useGasPoint(consensusConfig *common.ConsensusConfig, dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
+	return callDC(consensusConfig, dcAddr, sender, mgval, state, evm, "aa75506b000000000000000000000000", false)
 }
 
-func callDC(dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM, abi string) error {
+func callDC(consensusConfig *common.ConsensusConfig, dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM, abi string, useStaticCall bool) (uint64, error) {
 	code := state.GetCode(dcAddr)
 	if code == nil || bytes.Compare(code, []byte{}) == 0 {
 		log.Info("Incorrect DC address", "addr", dcAddr)
-		return errIncorrectGasDelegationContractAddress
+		return 0, errIncorrectGasDelegationContractAddress
 	}
 	// consume gas point
 	mgvalBytes := mgval.Bytes()
@@ -537,20 +565,33 @@ func callDC(dcAddr common.Address, sender common.Address, mgval *big.Int, state 
 	data := append(common.Hex2Bytes(abi), sender.Bytes()...)
 	data = append(data, bytes32Buffer...)
 	log.Debug("callDC()", "addr", dcAddr, "ABI", common.Bytes2Hex(data))
-	res, _, vmerr := evm.Call(vm.AccountRef(common.HexToAddress(common.VirtualMinerAddress)), dcAddr, data, 90000000000, big.NewInt(0))
+
+	checkerInitialGas := params.TxGasLimit
+	if consensusConfig != nil && consensusConfig.GasLimit != nil {
+		checkerInitialGas = consensusConfig.GasLimit.Uint64()
+	}
+	var res []byte
+	var leftOverGas uint64
+	var vmerr error
+	if useStaticCall {
+		res, leftOverGas, vmerr = evm.StaticCall(vm.AccountRef(common.HexToAddress(common.VirtualMinerAddress)), dcAddr, data, checkerInitialGas)
+	} else {
+		res, leftOverGas, vmerr = evm.Call(vm.AccountRef(common.HexToAddress(common.VirtualMinerAddress)), dcAddr, data, checkerInitialGas, big.NewInt(0))
+	}
 	if vmerr != nil {
 		// The only possible consensus-error would be if there wasn't
 		// sufficient balance to make the transfer happen. The first
 		// balance transfer may never fail.
 		log.Info("DC failed", "addr", dcAddr, "vm-error", vmerr.Error())
-		return errGasDelegationWhitelistCheckFailed
+		return checkerInitialGas - leftOverGas, errGasDelegationWhitelistCheckFailed
 	}
+	checkerGasUsed := checkerInitialGas - leftOverGas
 	// decode output data
 	log.Debug("callDC()", "addr", dcAddr, "response", common.Bytes2Hex(res))
 	if !bytes.Equal(res, ABITrue) {
-		return errGasDelegationWhitelistDenied
+		return checkerGasUsed, errGasDelegationWhitelistDenied
 	}
-	return nil
+	return checkerGasUsed, nil
 }
 
 // GetAvailableGasPoint read gas point from Global DC

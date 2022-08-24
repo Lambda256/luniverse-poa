@@ -18,6 +18,7 @@ package core
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/consensus"
 	"math"
 	"math/big"
 	"sort"
@@ -145,6 +146,8 @@ type blockChain interface {
 	CurrentBlock() *types.Block
 	GetBlock(hash common.Hash, number uint64) *types.Block
 	StateAt(root common.Hash) (*state.StateDB, error)
+	Engine() consensus.Engine
+	GetHeader(common.Hash, uint64) *types.Header
 
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
 }
@@ -240,10 +243,10 @@ type TxPool struct {
 	signer      types.Signer
 	mu          sync.RWMutex
 
-	istanbul                   bool // Fork indicator whether we are in the istanbul stage.
-	eip2718                    bool // Fork indicator whether we are using EIP-2718 type transactions.
-	eip1559                    bool // Fork indicator whether we are using EIP-1559 type transactions.
-	theBalanceGlobalDCHardfork bool
+	istanbul         bool // Fork indicator whether we are in the istanbul stage.
+	eip2718          bool // Fork indicator whether we are using EIP-2718 type transactions.
+	eip1559          bool // Fork indicator whether we are using EIP-1559 type transactions.
+	gasPointHardfork bool
 
 	currentState  *state.StateDB // Current state in the blockchain head
 	pendingNonces *txNoncer      // Pending state tracking virtual nonces
@@ -269,6 +272,8 @@ type TxPool struct {
 	initDoneCh      chan struct{}  // is closed once the pool is initialized (for tests)
 
 	changesSinceReorg int // A counter for how many drops we've performed in-between reorg.
+
+	gasPointCache map[common.Address]atomic.Value // gas point look-up cache
 }
 
 type txpoolResetRequest struct {
@@ -299,6 +304,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		reorgShutdownCh: make(chan struct{}),
 		initDoneCh:      make(chan struct{}),
 		gasPrice:        new(big.Int).SetUint64(config.PriceLimit),
+		gasPointCache:   make(map[common.Address]atomic.Value),
 	}
 	pool.locals = newAccountSet(pool.signer)
 	for _, addr := range config.Locals {
@@ -358,8 +364,8 @@ func (pool *TxPool) loop() {
 		// Handle ChainHeadEvent
 		case ev := <-pool.chainHeadCh:
 			if ev.Block != nil {
-				if pool.chainconfig.IsTheBalanceGlobalDCBlock(ev.Block.Number()) {
-					pool.theBalanceGlobalDCHardfork = true
+				if pool.chainconfig.IsGasPointBlock(ev.Block.Number()) {
+					pool.gasPointHardfork = true
 				}
 				pool.requestReset(head.Header(), ev.Block.Header())
 				head = ev.Block
@@ -643,11 +649,28 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	}
 	// Transactor should have enough funds to cover the costs
 	// cost == V + GP * GL
-	if tx.Value().Cmp(big.NewInt(0)) > 0 && pool.currentState.GetBalance(from).Cmp(tx.Value()) < 0 {
-		return ErrInsufficientFunds
-	}
-	if pool.currentState.GetBalance(from).Cmp(tx.Cost(pool.chainconfig, pool.theBalanceGlobalDCHardfork)) < 0 {
-		return ErrInsufficientFunds
+	cost := tx.Cost(pool.chainconfig)
+	value := tx.Value()
+	balance := pool.currentState.GetBalance(from)
+	if pool.chainconfig.GasPoint != nil && pool.gasPointHardfork {
+		if balance.Cmp(cost) < 0 {
+			if value.Cmp(big.NewInt(0)) > 0 && balance.Cmp(value) < 0 {
+				return ErrInsufficientFunds
+			}
+			remaining := big.NewInt(0).Sub(balance, value)
+			mgval := big.NewInt(0).Sub(cost, value)
+			gasPoint, err := pool.updateGasPoint(from)
+			if err != nil {
+				return err
+			}
+			if big.NewInt(0).Add(remaining, gasPoint).Cmp(mgval) < 0 {
+				return ErrInsufficientFunds
+			}
+		}
+	} else {
+		if balance.Cmp(cost) < 0 {
+			return ErrInsufficientFunds
+		}
 	}
 	// Ensure the transaction has more gas than the basic tx fee.
 	intrGas, err := IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, true, pool.istanbul)
@@ -726,7 +749,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	from, _ := types.Sender(pool.signer, tx) // already validated
 	if list := pool.pending[from]; list != nil && list.Overlaps(tx) {
 		// Nonce already pending, check if required price bump is met
-		inserted, old := list.Add(tx, pool.config.PriceBump, pool.theBalanceGlobalDCHardfork)
+		inserted, old := list.Add(tx, pool.config.PriceBump)
 		if !inserted {
 			pendingDiscardMeter.Mark(1)
 			return false, ErrReplaceUnderpriced
@@ -776,7 +799,7 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 	if pool.queue[from] == nil {
 		pool.queue[from] = newTxList(pool.chainconfig, false)
 	}
-	inserted, old := pool.queue[from].Add(tx, pool.config.PriceBump, pool.theBalanceGlobalDCHardfork)
+	inserted, old := pool.queue[from].Add(tx, pool.config.PriceBump)
 	if !inserted {
 		// An older transaction was better, discard this
 		queuedDiscardMeter.Mark(1)
@@ -830,7 +853,7 @@ func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.T
 	}
 	list := pool.pending[addr]
 
-	inserted, old := list.Add(tx, pool.config.PriceBump, pool.theBalanceGlobalDCHardfork)
+	inserted, old := list.Add(tx, pool.config.PriceBump)
 	if !inserted {
 		// An older transaction was better, discard this
 		pool.all.Remove(hash)
@@ -1334,18 +1357,23 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		if list == nil {
 			continue // Just in case someone calls with a non existing account
 		}
+
 		// Drop all transactions that are deemed too old (low nonce)
 		forwards := list.Forward(pool.currentState.GetNonce(addr))
 		for _, tx := range forwards {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			log.Info("Removed old queued transactions", "hash", hash)
 		}
 		log.Trace("Removed old queued transactions", "count", len(forwards))
+
 		// Drop all transactions that are too costly (low balance or out of gas)
-		drops, _ := list.Filter(pool.currentState.GetBalance(addr), pool.currentMaxGas, pool.theBalanceGlobalDCHardfork)
+		gasPoint := pool.lookupGasPoint(addr)
+		drops, _ := list.Filter(big.NewInt(0).Add(pool.currentState.GetBalance(addr), gasPoint), pool.currentMaxGas)
 		for _, tx := range drops {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			log.Info("Removed unpayable queued transactions", "hash", hash)
 		}
 		log.Trace("Removed unpayable queued transactions", "count", len(drops))
 		queuedNofundsMeter.Mark(int64(len(drops)))
@@ -1356,6 +1384,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 			hash := tx.Hash()
 			if pool.promoteTx(addr, hash, tx) {
 				promoted = append(promoted, tx)
+				log.Info("Promoted queued transactions", "hash", hash)
 			}
 		}
 		log.Trace("Promoted queued transactions", "count", len(promoted))
@@ -1536,20 +1565,21 @@ func (pool *TxPool) demoteUnexecutables() {
 		for _, tx := range olds {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
-			log.Trace("Removed old pending transaction", "hash", hash)
+			log.Info("Removed old pending transaction", "hash", hash)
 		}
 		// Drop all transactions that are too costly (low balance or out of gas), and queue any invalids back for later
-		drops, invalids := list.Filter(pool.currentState.GetBalance(addr), pool.currentMaxGas, pool.theBalanceGlobalDCHardfork)
+		gasPoint := pool.lookupGasPoint(addr)
+		drops, invalids := list.Filter(big.NewInt(0).Add(pool.currentState.GetBalance(addr), gasPoint), pool.currentMaxGas)
 		for _, tx := range drops {
 			hash := tx.Hash()
-			log.Trace("Removed unpayable pending transaction", "hash", hash)
+			log.Info("Removed unpayable pending transaction", "hash", hash)
 			pool.all.Remove(hash)
 		}
 		pendingNofundsMeter.Mark(int64(len(drops)))
 
 		for _, tx := range invalids {
 			hash := tx.Hash()
-			log.Trace("Demoting pending transaction", "hash", hash)
+			log.Info("Demoting pending transaction", "hash", hash)
 
 			// Internal shuffle shouldn't touch the lookup set.
 			pool.enqueueTx(hash, tx, false, false)
@@ -1577,6 +1607,49 @@ func (pool *TxPool) demoteUnexecutables() {
 			delete(pool.pending, addr)
 		}
 	}
+}
+
+func (pool *TxPool) updateGasPoint(addr common.Address) (*big.Int, error) {
+	var gasPoint = big.NewInt(0)
+	if pool.chainconfig.GasPoint != nil && pool.gasPointHardfork {
+		var err error
+		gasPoint, err = GetAvailableGasPoint(pool.chainconfig, pool.chain, pool.chain.CurrentBlock().Header(), pool.currentState, addr)
+		if err != nil {
+			return nil, err
+		}
+		var v atomic.Value
+		v.Store(gasPoint)
+		pool.gasPointCache[addr] = v
+		log.Info("Gas point cache update was successful", "addr", addr, "point", gasPoint)
+	}
+	return gasPoint, nil
+}
+
+func (pool *TxPool) lookupGasPoint(addr common.Address) *big.Int {
+	var gasPoint = big.NewInt(0)
+	if pool.chainconfig.GasPoint != nil && pool.gasPointHardfork {
+		cached, ok := pool.gasPointCache[addr]
+		if ok {
+			if v := cached.Load(); v != nil {
+				gasPoint = v.(*big.Int)
+				log.Info("Gas point cache lookup was successful", "addr", addr, "point", gasPoint)
+			} else {
+				log.Error("Gas point cache was hit, but failed to load atomic.Value", "addr", addr)
+			}
+		} else {
+			var err error
+			gasPoint, err = GetAvailableGasPoint(pool.chainconfig, pool.chain, pool.chain.CurrentBlock().Header(), pool.currentState, addr)
+			if err != nil {
+				log.Error("Gas point cache was missed, and failed to retrieve gas point from contract", "addr", addr)
+			} else {
+				var v atomic.Value
+				v.Store(gasPoint)
+				pool.gasPointCache[addr] = v
+				log.Warn("Gas point cache was missed, gas point retrieval was successful, so caching it.", "addr", addr, "point", gasPoint)
+			}
+		}
+	}
+	return gasPoint
 }
 
 // addressByHeartbeat is an account address tagged with its last activity timestamp.

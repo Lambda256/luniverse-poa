@@ -67,9 +67,9 @@ type TxPool struct {
 	mined        map[common.Hash][]*types.Transaction // mined transactions by block hash
 	clearIdx     uint64                               // earliest block nr that can contain mined tx info
 
-	istanbul                   bool // Fork indicator whether we are in the istanbul stage.
-	eip2718                    bool // Fork indicator whether we are in the eip2718 stage.
-	theBalanceGlobalDCHardfork bool
+	istanbul         bool // Fork indicator whether we are in the istanbul stage.
+	eip2718          bool // Fork indicator whether we are in the eip2718 stage.
+	gasPointHardfork bool
 }
 
 // TxRelayBackend provides an interface to the mechanism that forwards transacions
@@ -316,7 +316,7 @@ func (pool *TxPool) setNewHead(head *types.Header) {
 	next := new(big.Int).Add(head.Number, big.NewInt(1))
 	pool.istanbul = pool.config.IsIstanbul(next)
 	pool.eip2718 = pool.config.IsBerlin(next)
-	pool.theBalanceGlobalDCHardfork = pool.config.IsTheBalanceGlobalDCBlock(next)
+	pool.gasPointHardfork = pool.config.IsGasPointBlock(next)
 }
 
 // Stop stops the light transaction pool
@@ -379,7 +379,7 @@ func (pool *TxPool) validateTx(ctx context.Context, tx *types.Transaction) error
 
 	// Transactor should have enough funds to cover the costs
 	// cost == V + GP * GL
-	if b := currentState.GetBalance(from); b.Cmp(tx.Cost(pool.config, pool.theBalanceGlobalDCHardfork)) < 0 {
+	if b := currentState.GetBalance(from); b.Cmp(tx.Cost(pool.config)) < 0 {
 		return core.ErrInsufficientFunds
 	}
 

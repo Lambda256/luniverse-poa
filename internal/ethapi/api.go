@@ -666,7 +666,7 @@ func (s *PublicBlockChainAPI) GetBalance(ctx context.Context, address common.Add
 
 	// ABI to invoke `getUserGasPoint(address _account) public returns (uint256)`
 	gasPoint := big.NewInt(0)
-	if s.b.ChainConfig() != nil && s.b.ChainConfig().GlobalDC != nil && s.b.ChainConfig().IsTheBalanceGlobalDCBlock(s.b.CurrentBlock().Number()) {
+	if s.b.ChainConfig() != nil && s.b.ChainConfig().GasPoint != nil && s.b.ChainConfig().IsGasPointBlock(s.b.CurrentBlock().Number()) {
 		header, err := s.b.HeaderByNumber(ctx, *blockNrOrHash.BlockNumber)
 		if err != nil {
 			log.Error("Failed to get header during gas point retrieval", "err", err)
@@ -674,11 +674,11 @@ func (s *PublicBlockChainAPI) GetBalance(ctx context.Context, address common.Add
 		}
 		gasPoint, err = core.GetAvailableGasPoint(s.b.ChainConfig(), s.b.BlockChain(), header, state, address)
 		if err != nil {
-			log.Error("Failed to get gasPoint from GlobalDC!", "err", err)
+			log.Error("Failed to get gasPoint from GasPoint contract!", "err", err)
 			return nil, err
 		}
 		//ABI := append(common.Hex2Bytes("fb6871dd000000000000000000000000"), address.Bytes()...)
-		//log.Debug("getUserGasPoint()", "GlobalDC", dcAddress, "ABI", common.ToHex(ABI))
+		//log.Debug("getUserGasPoint()", "GasPoint", dcAddress, "ABI", common.ToHex(ABI))
 		//// prepare message to execute
 		//msg := types.NewMessage(s.b.ChainConfig(), common.HexToAddress(common.VirtualMinerAddress), &dcAddress, 0, big.NewInt(0), 90000000000, big.NewInt(0), ABI, false)
 		//context := core.NewEVMContext(msg, header, s.b.BlockChain(), nil)
@@ -724,7 +724,7 @@ func (s *PublicBlockChainAPI) GetGasPoint(ctx context.Context, address common.Ad
 
 	// ABI to invoke `getUserGasPoint(address _account) public returns (uint256)`
 	gasPoint := big.NewInt(0)
-	if s.b.ChainConfig() != nil && s.b.ChainConfig().GlobalDC != nil && s.b.ChainConfig().IsTheBalanceGlobalDCBlock(s.b.CurrentBlock().Number()) {
+	if s.b.ChainConfig() != nil && s.b.ChainConfig().GasPoint != nil && s.b.ChainConfig().IsGasPointBlock(s.b.CurrentBlock().Number()) {
 		header, err := s.b.HeaderByNumber(ctx, blockNr)
 		if err != nil {
 			log.Error("Failed to get header during gas point retrieval", "err", err)
@@ -732,7 +732,7 @@ func (s *PublicBlockChainAPI) GetGasPoint(ctx context.Context, address common.Ad
 		}
 		gasPoint, err = core.GetAvailableGasPoint(s.b.ChainConfig(), s.b.BlockChain(), header, state, address)
 		if err != nil {
-			log.Error("Failed to get gasPoint from GlobalDC!", "err", err)
+			log.Error("Failed to get gasPoint from GasPoint contract!", "err", err)
 			return nil, err
 		}
 	}
@@ -1090,9 +1090,12 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 		consensusConfig = core.RetrieveConsensusConfigurations(b.BlockChain(), header, state, b.ChainConfig())
 	}
 
-	var txGasLimit = params.TxGasLimit
-	if consensusConfig != nil && consensusConfig.GasLimit != nil {
-		txGasLimit = consensusConfig.GasLimit.Uint64()
+	var txGasLimit = uint64(50000000) // to allow deployment of heavy contract
+	if args.To != nil && *args.To != (common.Address{}) {
+		txGasLimit = params.TxGasLimit
+		if consensusConfig != nil && consensusConfig.GasLimit != nil {
+			txGasLimit = consensusConfig.GasLimit.Uint64()
+		}
 	}
 
 	var poolGasPrice = b.GetPoolGasPrice()
@@ -1119,10 +1122,10 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 	if gasPrice.Sign() == 0 {
 		//gasPrice = new(big.Int).SetUint64(defaultGasPrice)
 		gasPrice = poolGasPrice
+		args.GasPrice = (*hexutil.Big)(gasPrice)
 	} else if poolGasPrice.Cmp(gasPrice) > 0 {
 		return nil, core.ErrUnderpriced
 	}
-	cost := big.NewInt(0).Mul(big.NewInt(int64(gas)), gasPrice)
 
 	// Setup context so it may be cancelled the call has completed
 	// or, in case of unmetered gas, setup a context with a timeout.
@@ -1146,7 +1149,7 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 	if err != nil {
 		return nil, err
 	}
-	evm, vmError, err := b.GetNonTxEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, cost)
+	evm, vmError, err := b.GetNonTxEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, math.MaxBig256)
 	if err != nil {
 		return nil, err
 	}
@@ -1301,8 +1304,11 @@ func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNr
 	}
 	// Recap the highest gas allowance with specified gascap.
 	if gasCap != 0 && hi > gasCap {
-		log.Warn("Caller gas above allowance, capping", "requested", hi, "cap", gasCap)
-		hi = gasCap
+		if args.To != nil && *args.To != (common.Address{}) {
+			log.Warn("Caller gas above allowance, capping", "requested", hi, "cap", gasCap)
+			hi = gasCap
+		}
+		// in case of contract creation, do not change `hi`.
 	}
 	cap = hi
 

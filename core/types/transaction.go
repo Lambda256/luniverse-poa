@@ -292,7 +292,7 @@ func (tx *Transaction) To() *common.Address {
 }
 
 // Cost returns gas * gasPrice + value.
-func (tx *Transaction) Cost(chainConfig *params.ChainConfig, theBalanceGlobalDCHardfork bool) *big.Int {
+func (tx *Transaction) Cost(chainConfig *params.ChainConfig) *big.Int {
 	/*
 		total := new(big.Int).Mul(tx.GasPrice(), new(big.Int).SetUint64(tx.Gas()))
 		total.Add(total, tx.Value())
@@ -317,16 +317,6 @@ func (tx *Transaction) Cost(chainConfig *params.ChainConfig, theBalanceGlobalDCH
 		// system SHOULD pay for all gas
 	} else if gasDelegator != (common.Address{}) {
 		// delegator SHOULD pay for all gas
-	} else if chainConfig.GlobalDC != nil && theBalanceGlobalDCHardfork {
-		// delegator might not pay for all gas
-		// GlobalDC does not guarantee to pay for all gas. (Because there is quarter limit for each EOA!)
-		// TODO: We decided not to read available gas point from Global DC due to performance issue.
-		//       Any pending txs due to the insufficient gas-fee might be re-executed after get gas point refill or enough balance.
-		total = new(big.Int).Mul(tx.GasPrice(), new(big.Int).SetUint64(tx.Gas()))
-		total = new(big.Int).Sub(total, new(big.Int).SetUint64(chainConfig.GlobalDC.GasPointEtherMax*params.Ether))
-		if total.Cmp(big.NewInt(0)) < 0 {
-			total = big.NewInt(0) // in case of negative, make it to zero
-		}
 	} else {
 		// Not a `Gas-Free` and `Gas-Delegation` case.
 		// Therefore, sender should pay for Gas-fee.

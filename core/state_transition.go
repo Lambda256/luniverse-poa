@@ -227,66 +227,76 @@ func (st *StateTransition) buyGas() error {
 		sender = st.msg.ChainConfig().GasFree.Payer
 	} else if st.msg.GasDelegator() != nil {
 		gasDelegationContractAddr := st.msg.GasDelegator()
-		///////////////////////////////////////////////////////////////////////////////////////////
 		checkerGasUsed, err := checkWhitelist(st.consensusConfig, *gasDelegationContractAddr, sender, mgval, state, st.evm)
 		if err != nil {
 			return err
 		}
-		if st.msg.ChainConfig().GlobalDC != nil && st.msg.ChainConfig().IsTheBalanceGlobalDCBlock(st.evm.Context.BlockNumber) {
-			// Account gas consumed by checkWhitelist()
-			totalGas += checkerGasUsed
-
+		if st.msg.ChainConfig().GasPoint != nil && st.msg.ChainConfig().IsGasPointBlock(st.evm.Context.BlockNumber) {
+			///////////////////////////////////////////////////////////////////////////////////////////
 			// Charge gas consumed by checkWhitelist() to the delegator
-			delegatorExpense := new(big.Int).SetUint64(checkerGasUsed)
-			delegatorExpense.Mul(delegatorExpense, st.gasPrice)
-			balanceCheck.Add(balanceCheck, delegatorExpense)
+			totalGas += checkerGasUsed
+			delegatorExpense := big.NewInt(0).Mul(new(big.Int).SetUint64(checkerGasUsed), st.gasPrice)
 			mgval.Add(mgval, delegatorExpense)
-
-			// Do not account for msg.value of original sender
-			balanceCheck.Sub(balanceCheck, st.value)
-		} ///////////////////////////////////////////////////////////////////////////////////////////
+			if st.gasFeeCap != nil {
+				// re-calculate `balanceCheck`
+				balanceCheck = big.NewInt(0).Mul(new(big.Int).SetUint64(totalGas), st.gasFeeCap)
+				// Do not account for msg.value of original sender
+			} ///////////////////////////////////////////////////////////////////////////////////////////
+		}
 		sender = *gasDelegationContractAddr
-	} else if st.msg.ChainConfig().GlobalDC != nil && st.msg.ChainConfig().IsTheBalanceGlobalDCBlock(st.evm.Context.BlockNumber) {
+	} else if st.msg.ChainConfig().GasPoint != nil && st.msg.ChainConfig().IsGasPointBlock(st.evm.Context.BlockNumber) {
 		balance := state.GetBalance(sender)
-		if balance.Cmp(mgval) < 0 {
-			// try split gas payment
-			gasDelegationContractAddr := st.msg.ChainConfig().GlobalDC.GasDelegationContractAddress
-			insufficientMgval := big.NewInt(0).Sub(mgval, balance)
-			if state.GetBalance(gasDelegationContractAddr).Cmp(insufficientMgval) < 0 {
+		cost := big.NewInt(0).Add(mgval, st.value)
+		if balance.Cmp(cost) < 0 {
+			if st.value.Cmp(big.NewInt(0)) > 0 && balance.Cmp(st.value) < 0 {
+				return ErrInsufficientFundsForTransfer
+			}
+			// OK. Attempt to pay split gas!
+			remaining := big.NewInt(0).Sub(balance, st.value)
+			insufficientMgval := big.NewInt(0).Sub(mgval, remaining)
+
+			gasPointContractAddress := st.msg.ChainConfig().GasPoint.ContractAddress
+			_, err := useGasPoint(st.consensusConfig, gasPointContractAddress, sender, insufficientMgval, state, st.evm)
+			if err != nil {
+				return err
+			}
+
+			/******************************************************************************************
+			// Note: We decided to disable following additional gas charge logic,
+			//       because we don't know used gas amount of useGasPoint() prior to executing it.
+			//       Especially we have no choice other than additional execution of useGasPoint()
+			//       to update additional expense for delegation. It's too expensive overhead.
+			******************************************************************************************/
+			///////////////////////////////////////////////////////////////////////////////////////////
+			// Charge gas consumed by useGasPoint() to the delegator
+			//totalGas += checkerGasUsed
+			//delegatorExpense := big.NewInt(0).Mul(new(big.Int).SetUint64(checkerGasUsed), st.gasPrice)
+			//mgval.Add(mgval, delegatorExpense)
+			//if st.gasFeeCap != nil {
+			//	// re-calculate `balanceCheck`
+			//	balanceCheck = big.NewInt(0).Mul(new(big.Int).SetUint64(totalGas), st.gasFeeCap)
+			//	// Do not account for msg.value of original sender
+			//} ///////////////////////////////////////////////////////////////////////////////////////////
+
+			if state.GetBalance(gasPointContractAddress).Cmp(insufficientMgval /* + delegatorExpense */) < 0 {
 				return errInsufficientBalanceForGas
 			}
 			if err := st.gp.SubGas(totalGas); err != nil {
 				return err
 			}
-			///////////////////////////////////////////////////////////////////////////////////////////
-			_, err := useGasPoint(st.consensusConfig, gasDelegationContractAddr, sender, insufficientMgval, state, st.evm)
-			if err != nil {
-				return err
-			}
-			// Account gas consumed by useGasPoint()
-			//totalGas += checkerGasUsed
-
-			// Charge gas consumed by useGasPoint() to the delegator
-			//delegatorExpense := new(big.Int).SetUint64(checkerGasUsed)
-			//delegatorExpense.Mul(delegatorExpense, st.gasPrice)
-			//balanceCheck.Add(balanceCheck, delegatorExpense)
-			//mgval.Add(mgval, delegatorExpense)
-
-			// Do not account for msg.value of original sender
-			//balanceCheck.Sub(balanceCheck, st.value)
-			///////////////////////////////////////////////////////////////////////////////////////////
-			st.gas += st.msg.Gas()
-			st.initialGas = st.msg.Gas()
-			state.SubBalance(sender, balance)                              // make sender's balance to be zero
-			state.SubBalance(gasDelegationContractAddr, insufficientMgval) // consume global DC's balance
-			st.splitGasPaid = true                                         // mark as gas payment was split
+			st.gas += totalGas
+			st.initialGas = totalGas
+			state.SubBalance(sender, remaining)                                                   // consider preserved amount for `st.value`
+			state.SubBalance(gasPointContractAddress, insufficientMgval /* + delegatorExpense */) // consume gas point balance
+			st.splitGasPaid = true                                                                // mark as gas payment was split
+			log.Info("Attempt to pay split gas", "from", sender.String(), "balance", balance, "value", st.value, "eth-gas", remaining, "point-gas", insufficientMgval)
 		} else {
 			// OK. Original sender will pay for all gas!
 			if err := st.gp.SubGas(totalGas); err != nil {
 				return err
 			}
-			st.gas += st.msg.Gas()
-			st.initialGas = st.msg.Gas()
+			st.gas += totalGas
+			st.initialGas = totalGas
 			state.SubBalance(sender, mgval)
 		}
 		return nil
@@ -297,9 +307,9 @@ func (st *StateTransition) buyGas() error {
 	if err := st.gp.SubGas(totalGas); err != nil {
 		return err
 	}
-	st.gas += st.msg.Gas()
+	st.gas += totalGas
 
-	st.initialGas = st.msg.Gas()
+	st.initialGas = totalGas
 	state.SubBalance(sender, mgval)
 	return nil
 }
@@ -522,11 +532,11 @@ func (st *StateTransition) refundGas(refundQuotient uint64) {
 		sender = st.msg.ChainConfig().GasFree.Payer
 	} else if st.msg.GasDelegator() != nil {
 		sender = *st.msg.GasDelegator()
-	} else if st.msg.ChainConfig().GlobalDC != nil && st.msg.ChainConfig().IsTheBalanceGlobalDCBlock(st.evm.Context.BlockNumber) {
+	} else if st.msg.ChainConfig().GasPoint != nil && st.msg.ChainConfig().IsGasPointBlock(st.evm.Context.BlockNumber) {
 		if st.splitGasPaid {
 			// Just to make refund simple!
 			// Later it needs to be revised to consider paid gas ratio.
-			sender = st.msg.ChainConfig().GlobalDC.Receiver
+			sender = st.msg.ChainConfig().GasPoint.Receiver
 		}
 	}
 	remaining := new(big.Int).Mul(new(big.Int).SetUint64(st.gas), st.gasPrice)
@@ -594,12 +604,12 @@ func callDC(consensusConfig *common.ConsensusConfig, dcAddr common.Address, send
 	return checkerGasUsed, nil
 }
 
-// GetAvailableGasPoint read gas point from Global DC
+// GetAvailableGasPoint read gas point from GasPoint contract
 func GetAvailableGasPoint(chainConfig *params.ChainConfig, chain ChainContext, header *types.Header, state *state.StateDB, address common.Address) (*big.Int, error) {
-	if chainConfig.GlobalDC == nil || !chainConfig.IsTheBalanceGlobalDCBlock(header.Number) {
+	if chainConfig.GasPoint == nil || !chainConfig.IsGasPointBlock(header.Number) {
 		return big.NewInt(0), nil
 	}
-	dcAddress := chainConfig.GlobalDC.GasDelegationContractAddress
+	dcAddress := chainConfig.GasPoint.ContractAddress
 	code := state.GetCode(dcAddress)
 	if code == nil || bytes.Compare(code, []byte{}) == 0 {
 		log.Info("Incorrect DC address", "address", dcAddress)
@@ -608,13 +618,13 @@ func GetAvailableGasPoint(chainConfig *params.ChainConfig, chain ChainContext, h
 	// ABI to invoke `getUserGasPoint(address _account) public view returns (uint256)`
 	gasPoint := big.NewInt(0)
 	ABI := append(common.Hex2Bytes("fb6871dd000000000000000000000000"), address.Bytes()...)
-	log.Debug("getUserGasPoint()", "GlobalDC", dcAddress, "ABI", common.Bytes2Hex(ABI))
+	log.Debug("getUserGasPoint()", "GasPoint", dcAddress, "ABI", common.Bytes2Hex(ABI))
 	// prepare message to execute
 	msg := types.NewMessage(chainConfig, common.HexToAddress(common.VirtualMinerAddress), &dcAddress, 0, big.NewInt(0), 90000000000, big.NewInt(0), nil, nil, ABI, nil, false)
 	context := NewEVMBlockContext(header, chain, nil)
 	txContext := NewEVMTxContext(msg)
 	evm := vm.NewEVM(context, txContext, state, chainConfig, vm.Config{})
-	res, _, vmerr := evm.Call(vm.AccountRef(msg.From()), vm.AccountRef(*msg.To()).Address(), msg.Data(), msg.Gas(), msg.Value())
+	res, _, vmerr := evm.StaticCall(vm.AccountRef(msg.From()), vm.AccountRef(*msg.To()).Address(), msg.Data(), msg.Gas())
 	if vmerr != nil {
 		// The only possible consensus-error would be if there wasn't
 		// sufficient balance to make the transfer happen. The first

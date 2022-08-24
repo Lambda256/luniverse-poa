@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/log"
+	lru "github.com/hashicorp/golang-lru"
+	"golang.org/x/crypto/sha3"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -163,7 +165,17 @@ func ApplyTransaction(consensusConfig *common.ConsensusConfig, config *params.Ch
 	return applyTransaction(consensusConfig, msg, config, bc, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
 }
 
+var consensusConfigurationCache, _ = lru.NewARC(4096)
+
 func RetrieveConsensusConfigurations(chain ChainContext, header *types.Header, statedb *state.StateDB, chainConfig *params.ChainConfig) *common.ConsensusConfig {
+	hasher := sha3.New256()
+	hasher.Write(header.Number.Bytes())
+	hasher.Write(header.Hash().Bytes())
+	key := common.BytesToHash(hasher.Sum(nil))
+	if prev, ok := consensusConfigurationCache.Get(key); ok {
+		return prev.(*common.ConsensusConfig)
+	}
+
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// Read consensus configurations from system contract.
 	// It is intended to be used only for `Mainnet Core`.
@@ -205,8 +217,9 @@ func RetrieveConsensusConfigurations(chain ChainContext, header *types.Header, s
 	if err := json.Unmarshal(responseData[:], consensusConfig); err != nil {
 		panic(fmt.Sprintf("Failed to parse ConsensusConfig response: %+v", err))
 	}
-	log.Debug(fmt.Sprintf("ConsensusConfig info (json): %+v", consensusConfig))
+	log.Debug(fmt.Sprintf("--- ConsensusConfig info (json): header.Number=%+v, header.Hash=%+v, %s", header.Number, header.Hash(), string(responseData)))
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+	consensusConfigurationCache.Add(key, consensusConfig)
 	return consensusConfig
 }

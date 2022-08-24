@@ -346,26 +346,26 @@ type ChainConfig struct {
 	EIP155Block *big.Int `json:"eip155Block,omitempty"` // EIP155 HF block
 	EIP158Block *big.Int `json:"eip158Block,omitempty"` // EIP158 HF block
 
-	ByzantiumBlock          *big.Int `json:"byzantiumBlock,omitempty"`          // Byzantium switch block (nil = no fork, 0 = already on byzantium)
-	ConstantinopleBlock     *big.Int `json:"constantinopleBlock,omitempty"`     // Constantinople switch block (nil = no fork, 0 = already activated)
-	PetersburgBlock         *big.Int `json:"petersburgBlock,omitempty"`         // Petersburg switch block (nil = same as Constantinople)
-	IstanbulBlock           *big.Int `json:"istanbulBlock,omitempty"`           // Istanbul switch block (nil = no fork, 0 = already on istanbul)
-	MuirGlacierBlock        *big.Int `json:"muirGlacierBlock,omitempty"`        // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	BerlinBlock             *big.Int `json:"berlinBlock,omitempty"`             // Berlin switch block (nil = no fork, 0 = already on berlin)
-	LondonBlock             *big.Int `json:"londonBlock,omitempty"`             // London switch block (nil = no fork, 0 = already on london)
-	ArrowGlacierBlock       *big.Int `json:"arrowGlacierBlock,omitempty"`       // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
-	MergeForkBlock          *big.Int `json:"mergeForkBlock,omitempty"`          // EIP-3675 (TheMerge) switch block (nil = no fork, 0 = already in merge proceedings)
-	TheBalanceGlobalDCBlock *big.Int `json:"theBalanceGlobalDCBlock,omitempty"` // TheBalanceGlobalDCBlock switch block (nil = no fork, 0 = already activated)
+	ByzantiumBlock      *big.Int `json:"byzantiumBlock,omitempty"`      // Byzantium switch block (nil = no fork, 0 = already on byzantium)
+	ConstantinopleBlock *big.Int `json:"constantinopleBlock,omitempty"` // Constantinople switch block (nil = no fork, 0 = already activated)
+	PetersburgBlock     *big.Int `json:"petersburgBlock,omitempty"`     // Petersburg switch block (nil = same as Constantinople)
+	IstanbulBlock       *big.Int `json:"istanbulBlock,omitempty"`       // Istanbul switch block (nil = no fork, 0 = already on istanbul)
+	MuirGlacierBlock    *big.Int `json:"muirGlacierBlock,omitempty"`    // Eip-2384 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	BerlinBlock         *big.Int `json:"berlinBlock,omitempty"`         // Berlin switch block (nil = no fork, 0 = already on berlin)
+	LondonBlock         *big.Int `json:"londonBlock,omitempty"`         // London switch block (nil = no fork, 0 = already on london)
+	ArrowGlacierBlock   *big.Int `json:"arrowGlacierBlock,omitempty"`   // Eip-4345 (bomb delay) switch block (nil = no fork, 0 = already activated)
+	MergeForkBlock      *big.Int `json:"mergeForkBlock,omitempty"`      // EIP-3675 (TheMerge) switch block (nil = no fork, 0 = already in merge proceedings)
+	GasPointForkBlock   *big.Int `json:"gasPointForkBlock,omitempty"`   // GasPointForkBlock switch block (nil = no fork, 0 = already activated)
 
 	// TerminalTotalDifficulty is the amount of total difficulty reached by
 	// the network that triggers the consensus upgrade.
 	TerminalTotalDifficulty *big.Int `json:"terminalTotalDifficulty,omitempty"`
 
 	// Various consensus engines
-	Ethash   *EthashConfig                      `json:"ethash,omitempty"`
-	Clique   *CliqueConfig                      `json:"clique,omitempty"`
-	GasFree  *GasFreeConfig                     `json:"gasFree,omitempty"`
-	GlobalDC *GlobalGasDelegationContractConfig `json:"globalDC,omitempty"`
+	Ethash   *EthashConfig   `json:"ethash,omitempty"`
+	Clique   *CliqueConfig   `json:"clique,omitempty"`
+	GasFree  *GasFreeConfig  `json:"gasFree,omitempty"`
+	GasPoint *GasPointConfig `json:"gasPoint,omitempty"`
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -403,10 +403,9 @@ type GasFreeConfig struct {
 	Observer common.Address `json:"observer"`
 }
 
-type GlobalGasDelegationContractConfig struct {
-	GasDelegationContractAddress common.Address `json:"gasDelegationContractAddress"`
-	Receiver                     common.Address `json:"receiver"`
-	GasPointEtherMax             uint64         `json:"gasPointEtherMax"`
+type GasPointConfig struct {
+	ContractAddress common.Address `json:"contractAddress"`
+	Receiver        common.Address `json:"receiver"`
 }
 
 // String implements the fmt.Stringer interface.
@@ -420,7 +419,7 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	s := fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v, Berlin: %v, London: %v, Arrow Glacier: %v, MergeFork: %v, GlobalDC: %v, Engine: %v",
+	s := fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v, Berlin: %v, London: %v, Arrow Glacier: %v, MergeFork: %v, GasPoint: %v, Engine: %v",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -437,11 +436,11 @@ func (c *ChainConfig) String() string {
 		c.LondonBlock,
 		c.ArrowGlacierBlock,
 		c.MergeForkBlock,
-		c.TheBalanceGlobalDCBlock,
+		c.GasPointForkBlock,
 		engine,
 	)
-	if c.GlobalDC != nil {
-		s = fmt.Sprintf("%v, GlobalDC.Contract: %v, GlobalDC.Receiver: %v, GlobalDC.GasPointEtherMax: %v}", s, c.GlobalDC.GasDelegationContractAddress.String(), c.GlobalDC.Receiver.String(), c.GlobalDC.GasPointEtherMax)
+	if c.GasPoint != nil {
+		s = fmt.Sprintf("%v, GasPoint.ContractAddress: %v, GasPoint.Receiver: %v}", s, c.GasPoint.ContractAddress.String(), c.GasPoint.Receiver.String())
 	} else {
 		s = fmt.Sprintf("%v}", s)
 	}
@@ -515,8 +514,8 @@ func (c *ChainConfig) IsArrowGlacier(num *big.Int) bool {
 	return isForked(c.ArrowGlacierBlock, num)
 }
 
-func (c *ChainConfig) IsTheBalanceGlobalDCBlock(num *big.Int) bool {
-	return isForked(c.TheBalanceGlobalDCBlock, num)
+func (c *ChainConfig) IsGasPointBlock(num *big.Int) bool {
+	return isForked(c.GasPointForkBlock, num)
 }
 
 // IsTerminalPoWBlock returns whether the given block is the last block of PoW stage.
@@ -644,8 +643,8 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *Confi
 	if isForkIncompatible(c.MergeForkBlock, newcfg.MergeForkBlock, head) {
 		return newCompatError("Merge Start fork block", c.MergeForkBlock, newcfg.MergeForkBlock)
 	}
-	if isForkIncompatible(c.TheBalanceGlobalDCBlock, newcfg.TheBalanceGlobalDCBlock, head) {
-		return newCompatError("GlobalDC fork block", c.TheBalanceGlobalDCBlock, newcfg.TheBalanceGlobalDCBlock)
+	if isForkIncompatible(c.GasPointForkBlock, newcfg.GasPointForkBlock, head) {
+		return newCompatError("GasPoint fork block", c.GasPointForkBlock, newcfg.GasPointForkBlock)
 	}
 	return nil
 }
@@ -715,7 +714,7 @@ type Rules struct {
 	IsHomestead, IsEIP150, IsEIP155, IsEIP158               bool
 	IsByzantium, IsConstantinople, IsPetersburg, IsIstanbul bool
 	IsBerlin, IsLondon                                      bool
-	IsGlobalDC                                              bool
+	IsGasPoint                                              bool
 }
 
 // Rules ensures c's ChainID is not nil.
@@ -736,6 +735,6 @@ func (c *ChainConfig) Rules(num *big.Int) Rules {
 		IsIstanbul:       c.IsIstanbul(num),
 		IsBerlin:         c.IsBerlin(num),
 		IsLondon:         c.IsLondon(num),
-		IsGlobalDC:       c.IsTheBalanceGlobalDCBlock(num),
+		IsGasPoint:       c.IsGasPointBlock(num),
 	}
 }

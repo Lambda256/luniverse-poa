@@ -39,7 +39,7 @@ func TestStrictTxListAdd(t *testing.T) {
 	// Insert the transactions in a random order
 	list := newTxList(&params.ChainConfig{}, true)
 	for _, v := range rand.Perm(len(txs)) {
-		list.Add(txs[v], DefaultTxPoolConfig.PriceBump, false)
+		list.Add(txs[v], DefaultTxPoolConfig.PriceBump)
 	}
 	// Verify internal state
 	if len(list.txs.items) != len(txs) {
@@ -66,8 +66,8 @@ func BenchmarkTxListAdd(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		list := newTxList(&params.ChainConfig{}, true)
 		for _, v := range rand.Perm(len(txs)) {
-			list.Add(txs[v], DefaultTxPoolConfig.PriceBump, false)
-			list.Filter(priceLimit, DefaultTxPoolConfig.PriceBump, false)
+			list.Add(txs[v], DefaultTxPoolConfig.PriceBump)
+			list.Filter(priceLimit, DefaultTxPoolConfig.PriceBump)
 		}
 	}
 }

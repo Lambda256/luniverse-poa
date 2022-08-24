@@ -281,7 +281,7 @@ func (l *txList) Overlaps(tx *types.Transaction) bool {
 //
 // If the new transaction is accepted into the list, the lists' cost and gas
 // thresholds are also potentially updated.
-func (l *txList) Add(tx *types.Transaction, priceBump uint64, theBalanceGlobalDCHardfork bool) (bool, *types.Transaction) {
+func (l *txList) Add(tx *types.Transaction, priceBump uint64) (bool, *types.Transaction) {
 	// If there's an older better transaction, abort
 	old := l.txs.Get(tx.Nonce())
 	if old != nil {
@@ -307,7 +307,7 @@ func (l *txList) Add(tx *types.Transaction, priceBump uint64, theBalanceGlobalDC
 	}
 	// Otherwise overwrite the old transaction with the current one
 	l.txs.Put(tx)
-	if cost := tx.Cost(l.chainConfig, theBalanceGlobalDCHardfork); l.costcap.Cmp(cost) < 0 {
+	if cost := tx.Cost(l.chainConfig); l.costcap.Cmp(cost) < 0 {
 		l.costcap = cost
 	}
 	if gas := tx.Gas(); l.gascap < gas {
@@ -332,7 +332,7 @@ func (l *txList) Forward(threshold uint64) types.Transactions {
 // a point in calculating all the costs or if the balance covers all. If the threshold
 // is lower than the costgas cap, the caps will be reset to a new high after removing
 // the newly invalidated transactions.
-func (l *txList) Filter(costLimit *big.Int, gasLimit uint64, theBalanceGlobalDCHardfork bool) (types.Transactions, types.Transactions) {
+func (l *txList) Filter(costLimit *big.Int, gasLimit uint64) (types.Transactions, types.Transactions) {
 	// If all transactions are below the threshold, short circuit
 	if l.costcap.Cmp(costLimit) <= 0 && l.gascap <= gasLimit {
 		return nil, nil
@@ -342,7 +342,7 @@ func (l *txList) Filter(costLimit *big.Int, gasLimit uint64, theBalanceGlobalDCH
 
 	// Filter out all the transactions above the account's funds
 	removed := l.txs.Filter(func(tx *types.Transaction) bool {
-		return tx.Gas() > gasLimit || tx.Cost(l.chainConfig, theBalanceGlobalDCHardfork).Cmp(costLimit) > 0
+		return tx.Gas() > gasLimit || tx.Cost(l.chainConfig).Cmp(costLimit) > 0
 	})
 
 	if len(removed) == 0 {

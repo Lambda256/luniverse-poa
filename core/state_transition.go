@@ -301,9 +301,21 @@ func (st *StateTransition) buyGas() error {
 		}
 		return nil
 	}
-	if have, want := state.GetBalance(sender), balanceCheck; have.Cmp(want) < 0 {
-		return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, sender.Hex(), have, want)
+
+	if st.msg.ChainConfig().IsBerlin(st.evm.Context.BlockNumber) {
+		if have, want := state.GetBalance(sender), balanceCheck; have.Cmp(want) < 0 {
+			return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, sender.Hex(), have, want)
+		}
+	} else {
+		// 2022-09-02: winnerxg
+		// 	To prevent BAD_BLOCK case like follows:
+		//  * Example:
+		//    Error: could not apply tx 0 [0xe5f722ef3174cdaf9d4858d13f25792ba99e81427c4ff9d343d233435103e554]: insufficient funds for gas * price + value: address 0xd03B5ECaA9fB8b4CEdfA88a212697A8f37105e7E have 1550037810860000000000 want 70076192000000000000000
+		if state.GetBalance(sender).Cmp(mgval) < 0 {
+			return errInsufficientBalanceForGas
+		}
 	}
+
 	if err := st.gp.SubGas(totalGas); err != nil {
 		return err
 	}

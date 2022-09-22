@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-// +build nacl js nocgo
+//go:build nacl || js || !cgo || gofuzz
+// +build nacl js !cgo gofuzz
 
 package crypto
 
@@ -41,7 +42,7 @@ func Ecrecover(hash, sig []byte) ([]byte, error) {
 // SigToPub returns the public key that created the given signature.
 func SigToPub(hash, sig []byte) (*ecdsa.PublicKey, error) {
 	// Convert to btcec input format with 'recovery id' v at the beginning.
-	btcsig := make([]byte, 65)
+	btcsig := make([]byte, SignatureLength)
 	btcsig[0] = sig[64] + 27
 	copy(btcsig[1:], sig)
 
@@ -88,7 +89,7 @@ func VerifySignature(pubkey, hash, signature []byte) bool {
 		return false
 	}
 	// Reject malleable signatures. libsecp256k1 does this check but btcec doesn't.
-	if sig.S.Cmp(secp256k1_halfN) > 0 {
+	if sig.S.Cmp(secp256k1halfN) > 0 {
 		return false
 	}
 	return sig.Verify(hash, key)

@@ -60,7 +60,7 @@ func (w *wizard) deployDashboard() {
 			available[service] = append(available[service], server)
 		}
 	}
-	for _, service := range []string{"ethstats", "explorer", "wallet", "faucet"} {
+	for _, service := range []string{"ethstats", "explorer", "faucet"} {
 		// Gather all the locally hosted pages of this type
 		var pages []string
 		for _, server := range available[service] {
@@ -77,11 +77,7 @@ func (w *wizard) deployDashboard() {
 				}
 			case "explorer":
 				if infos, err := checkExplorer(client, w.network); err == nil {
-					port = infos.webPort
-				}
-			case "wallet":
-				if infos, err := checkWallet(client, w.network); err == nil {
-					port = infos.webPort
+					port = infos.port
 				}
 			case "faucet":
 				if infos, err := checkFaucet(client, w.network); err == nil {
@@ -92,7 +88,7 @@ func (w *wizard) deployDashboard() {
 				pages = append(pages, page)
 			}
 		}
-		// Promt the user to chose one, enter manually or simply not list this service
+		// Prompt the user to chose one, enter manually or simply not list this service
 		defLabel, defChoice := "don't list", len(pages)+2
 		if len(pages) > 0 {
 			defLabel, defChoice = pages[0], 1
@@ -127,8 +123,6 @@ func (w *wizard) deployDashboard() {
 			infos.ethstats = page
 		case "explorer":
 			infos.explorer = page
-		case "wallet":
-			infos.wallet = page
 		case "faucet":
 			infos.faucet = page
 		}
@@ -137,14 +131,14 @@ func (w *wizard) deployDashboard() {
 	if w.conf.ethstats != "" {
 		fmt.Println()
 		fmt.Println("Include ethstats secret on dashboard (y/n)? (default = yes)")
-		infos.trusted = w.readDefaultString("y") == "y"
+		infos.trusted = w.readDefaultYesNo(true)
 	}
 	// Try to deploy the dashboard container on the host
 	nocache := false
 	if existed {
 		fmt.Println()
 		fmt.Printf("Should the dashboard be built from scratch (y/n)? (default = no)\n")
-		nocache = w.readDefaultString("n") != "n"
+		nocache = w.readDefaultYesNo(false)
 	}
 	if out, err := deployDashboard(client, w.network, &w.conf, infos, nocache); err != nil {
 		log.Error("Failed to deploy dashboard container", "err", err)

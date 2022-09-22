@@ -49,7 +49,7 @@ func (w *wizard) deployFaucet() {
 	existed := err == nil
 
 	infos.node.genesis, _ = json.MarshalIndent(w.conf.Genesis, "", "  ")
-	infos.node.network = w.conf.Genesis.Config.ChainId.Int64()
+	infos.node.network = w.conf.Genesis.Config.ChainID.Int64()
 
 	// Figure out which port to listen on
 	fmt.Println()
@@ -81,7 +81,7 @@ func (w *wizard) deployFaucet() {
 	if infos.captchaToken != "" {
 		fmt.Println()
 		fmt.Println("Reuse previous reCaptcha API authorization (y/n)? (default = yes)")
-		if w.readDefaultString("y") != "y" {
+		if !w.readDefaultYesNo(true) {
 			infos.captchaToken, infos.captchaSecret = "", ""
 		}
 	}
@@ -89,7 +89,7 @@ func (w *wizard) deployFaucet() {
 		// No previous authorization (or old one discarded)
 		fmt.Println()
 		fmt.Println("Enable reCaptcha protection against robots (y/n)? (default = no)")
-		if w.readDefaultString("n") == "n" {
+		if !w.readDefaultYesNo(false) {
 			log.Warn("Users will be able to requests funds via automated scripts")
 		} else {
 			// Captcha protection explicitly requested, read the site and secret keys
@@ -101,6 +101,21 @@ func (w *wizard) deployFaucet() {
 			fmt.Printf("What is the reCaptcha secret key to verify authentications? (won't be echoed)\n")
 			infos.captchaSecret = w.readPassword()
 		}
+	}
+	// Accessing the Twitter API requires a bearer token, request it
+	if infos.twitterToken != "" {
+		fmt.Println()
+		fmt.Println("Reuse previous Twitter API token (y/n)? (default = yes)")
+		if !w.readDefaultYesNo(true) {
+			infos.twitterToken = ""
+		}
+	}
+	if infos.twitterToken == "" {
+		// No previous twitter token (or old one discarded)
+		fmt.Println()
+		fmt.Println()
+		fmt.Printf("What is the Twitter API app Bearer token?\n")
+		infos.twitterToken = w.readString()
 	}
 	// Figure out where the user wants to store the persistent data
 	fmt.Println()
@@ -132,7 +147,7 @@ func (w *wizard) deployFaucet() {
 		} else {
 			fmt.Println()
 			fmt.Printf("Reuse previous (%s) funding account (y/n)? (default = yes)\n", key.Address.Hex())
-			if w.readDefaultString("y") != "y" {
+			if !w.readDefaultYesNo(true) {
 				infos.node.keyJSON, infos.node.keyPass = "", ""
 			}
 		}
@@ -147,7 +162,7 @@ func (w *wizard) deployFaucet() {
 		infos.node.keyPass = w.readPassword()
 
 		if _, err := keystore.DecryptKey([]byte(infos.node.keyJSON), infos.node.keyPass); err != nil {
-			log.Error("Failed to decrypt key with given passphrase")
+			log.Error("Failed to decrypt key with given password")
 			infos.node.keyJSON = ""
 			infos.node.keyPass = ""
 		}
@@ -166,7 +181,7 @@ func (w *wizard) deployFaucet() {
 	if existed {
 		fmt.Println()
 		fmt.Printf("Should the faucet be built from scratch (y/n)? (default = no)\n")
-		nocache = w.readDefaultString("n") != "n"
+		nocache = w.readDefaultYesNo(false)
 	}
 	if out, err := deployFaucet(client, w.network, w.conf.bootnodes, infos, nocache); err != nil {
 		log.Error("Failed to deploy faucet container", "err", err)

@@ -18,8 +18,10 @@ package keystore
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,10 +29,11 @@ import (
 	"sync"
 	"time"
 
+	mapset "github.com/deckarep/golang-set"
 	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/keystore/kms"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"gopkg.in/fatih/set.v0"
 )
 
 // Minimum amount of time between cache reloads. This limit applies if the platform does
@@ -79,7 +82,7 @@ func newAccountCache(keydir string) (*accountCache, chan struct{}) {
 		keydir: keydir,
 		byAddr: make(map[common.Address][]accounts.Account),
 		notify: make(chan struct{}, 1),
-		fileC:  fileCache{all: set.NewNonTS()},
+		fileC:  fileCache{all: mapset.NewThreadUnsafeSet()},
 	}
 	ac.watcher = newWatcher(ac)
 	return ac, ac.notify
@@ -237,7 +240,7 @@ func (ac *accountCache) scanAccounts() error {
 		log.Debug("Failed to reload keystore contents", "err", err)
 		return err
 	}
-	if creates.Size() == 0 && deletes.Size() == 0 && updates.Size() == 0 {
+	if creates.Cardinality() == 0 && deletes.Cardinality() == 0 && updates.Cardinality() == 0 {
 		return nil
 	}
 	// Create a helper method to scan the contents of the key files
@@ -254,7 +257,35 @@ func (ac *accountCache) scanAccounts() error {
 			return nil
 		}
 		defer fd.Close()
-		buf.Reset(fd)
+		/////////////////////////////////////////////////////////////////////////////////
+		// check if given keystore file is encrypted or not
+		var ksBuf []byte
+		for {
+			p := make([]byte, 1024)
+			n, err := fd.Read(p)
+			if err == io.EOF {
+				break
+			}
+			ksBuf = append(ksBuf, p[:n]...)
+		}
+		// reset file pointer to head
+		_, err = fd.Seek(0, io.SeekStart)
+		if err != nil {
+			return nil
+		}
+		ksJson := string(ksBuf)
+		ksJson = strings.TrimSuffix(ksJson, "\n")
+		if strings.HasPrefix(ksJson, kms.AwsKmsPrefix) {
+			// decrypt keystore using AWS KMS
+			decryptedKeystore, err := kms.Decrypt(ksJson[len(kms.AwsKmsPrefix):])
+			if err != nil {
+				return nil
+			}
+			buf = bufio.NewReader(bytes.NewReader((*decryptedKeystore)[:]))
+		} else {
+			buf.Reset(fd)
+		}/////////////////////////////////////////////////////////////////////////////////
+
 		// Parse the address.
 		key.Address = ""
 		err = json.NewDecoder(buf).Decode(&key)
@@ -262,25 +293,28 @@ func (ac *accountCache) scanAccounts() error {
 		switch {
 		case err != nil:
 			log.Debug("Failed to decode keystore key", "path", path, "err", err)
-		case (addr == common.Address{}):
+		case addr == common.Address{}:
 			log.Debug("Failed to decode keystore key", "path", path, "err", "missing or zero address")
 		default:
-			return &accounts.Account{Address: addr, URL: accounts.URL{Scheme: KeyStoreScheme, Path: path}}
+			return &accounts.Account{
+				Address: addr,
+				URL:     accounts.URL{Scheme: KeyStoreScheme, Path: path},
+			}
 		}
 		return nil
 	}
 	// Process all the file diffs
 	start := time.Now()
 
-	for _, p := range creates.List() {
+	for _, p := range creates.ToSlice() {
 		if a := readAccount(p.(string)); a != nil {
 			ac.add(*a)
 		}
 	}
-	for _, p := range deletes.List() {
+	for _, p := range deletes.ToSlice() {
 		ac.deleteByFile(p.(string))
 	}
-	for _, p := range updates.List() {
+	for _, p := range updates.ToSlice() {
 		path := p.(string)
 		ac.deleteByFile(path)
 		if a := readAccount(path); a != nil {

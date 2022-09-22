@@ -16,6 +16,8 @@ var StakingContractAddress = "0x00000000000000000000000000000000000001fb"    // 
 
 //var ContributionPoolContractAddress = "0x00000000000000000000000000000000000001fe" // 510
 //var SustainabilityPoolContractAddress = "0x00000000000000000000000000000000000001ff" // 511
+
+var BoardMemberContractAddress = "0x0000000000000000000000000000000000000213" // 531
 //=============================================================================================
 
 // Block rewrad information (This information is retrieved from contract)
@@ -26,16 +28,15 @@ type RewardPool struct {
 }
 
 type ConsensusConfig struct {
-	AuthorityGovernanceStage *uint32	`json:"authorityGovernanceStage"`
-	BlockPeriod   *uint64	   `json:"blockPeriod"`
-	TargetGasLimit *big.Int      `json:"targetGasLimit"`
-	GasLimit      *big.Int      `json:"gasLimit"`
-	GasPrice      *big.Int      `json:"gasPrice"`
+	AuthorityGovernanceStage *uint32  `json:"authorityGovernanceStage"`
+	BlockPeriod              *uint64  `json:"blockPeriod"`
+	TargetGasLimit           *big.Int `json:"targetGasLimit"`
+	GasLimit                 *big.Int `json:"gasLimit"`
+	GasPrice                 *big.Int `json:"gasPrice"`
 
-	Reward        *big.Int      `json:"reward"`
+	Reward        *big.Int     `json:"reward"`
 	CoinbaseRatio *uint16      `json:"coinbaseRatio"`
 	RewardPools   []RewardPool `json:"rewardPools"`
 }
 
 var GetConsensusConfig = "7122b0fd" // ABI to invoke LuniverseConsensus.getAllSystemConfig()
-

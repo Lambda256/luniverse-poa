@@ -20,10 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/accounts"
@@ -1155,14 +1156,14 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 	}
 	// Wait for the context to be done and cancel the evm. Even if the
 	// EVM has finished, cancelling may be done (repeatedly)
-	var interrupted bool = false
+	//var interrupted bool = false
 	go func() {
 		<-ctx.Done()
 		if doneEvmExecution {
 			log.Debug("Call() - OK...")
 		} else {
 			log.Info("Call() - Timeout... Going interruption!!", "from", msg.From(), "to", msg.To(), "data", common.Bytes2Hex(msg.Data()[:4]), "timeout", timeout)
-			interrupted = true
+			//interrupted = true
 		}
 		evm.Cancel()
 	}()

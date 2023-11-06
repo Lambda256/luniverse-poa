@@ -55,26 +55,31 @@ The state transitioning model does all the necessary work to work out a valid ne
 3) Create a new state object if the recipient is \0*32
 4) Value transfer
 == If contract creation ==
-  4a) Attempt to run transaction data
-  4b) If valid, use result as code for the new state object
+
+	4a) Attempt to run transaction data
+	4b) If valid, use result as code for the new state object
+
 == end ==
 5) Run Script section
 6) Derive new state root
 */
 type StateTransition struct {
-	consensusConfig *common.ConsensusConfig
-	splitGasPaid    bool
-	gp              *GasPool
-	msg             Message
-	gas             uint64
-	gasPrice        *big.Int
-	gasFeeCap       *big.Int
-	gasTipCap       *big.Int
-	initialGas      uint64
-	value           *big.Int
-	data            []byte
-	state           vm.StateDB
-	evm             *vm.EVM
+	consensusConfig     *common.ConsensusConfig
+	splitGasPaid        bool
+	delegatorExpenseGas uint64          // additional gas used to check feasibility of delegation
+	gasDelegator        *common.Address // refund address of gas remained (native ETH will be refunded to predefined receiver, also same amount of point will be refunded to delegator)
+	gasPointPayoutMgval *big.Int        // consist of insufficient gas and delegator expense
+	gp                  *GasPool
+	msg                 Message
+	gas                 uint64
+	gasPrice            *big.Int
+	gasFeeCap           *big.Int
+	gasTipCap           *big.Int
+	initialGas          uint64
+	value               *big.Int
+	data                []byte
+	state               vm.StateDB
+	evm                 *vm.EVM
 }
 
 // Message represents a message sent to a contract.
@@ -177,17 +182,20 @@ func IntrinsicGas(data []byte, accessList types.AccessList, isContractCreation b
 // NewStateTransition initialises and returns a new state transition object.
 func NewStateTransition(consensusConfig *common.ConsensusConfig, evm *vm.EVM, msg Message, gp *GasPool) *StateTransition {
 	return &StateTransition{
-		consensusConfig: consensusConfig,
-		splitGasPaid:    false,
-		gp:              gp,
-		evm:             evm,
-		msg:             msg,
-		gasPrice:        msg.GasPrice(),
-		gasFeeCap:       msg.GasFeeCap(),
-		gasTipCap:       msg.GasTipCap(),
-		value:           msg.Value(),
-		data:            msg.Data(),
-		state:           evm.StateDB,
+		consensusConfig:     consensusConfig,
+		splitGasPaid:        false,
+		delegatorExpenseGas: 0,
+		gasDelegator:        nil,
+		gasPointPayoutMgval: nil,
+		gp:                  gp,
+		evm:                 evm,
+		msg:                 msg,
+		gasPrice:            msg.GasPrice(),
+		gasFeeCap:           msg.GasFeeCap(),
+		gasTipCap:           msg.GasTipCap(),
+		value:               msg.Value(),
+		data:                msg.Data(),
+		state:               evm.StateDB,
 	}
 }
 
@@ -242,6 +250,10 @@ func (st *StateTransition) buyGas() error {
 				balanceCheck = big.NewInt(0).Mul(new(big.Int).SetUint64(totalGas), st.gasFeeCap)
 				// Do not account for msg.value of original sender
 			} ///////////////////////////////////////////////////////////////////////////////////////////
+
+			if st.msg.ChainConfig().IsGasDelegationBlock(st.evm.Context.BlockNumber) {
+				st.delegatorExpenseGas = checkerGasUsed // referred in TransitionDb() to substract intrinsic gas
+			}
 		}
 		sender = *gasDelegationContractAddr
 	} else if st.msg.ChainConfig().GasPoint != nil && st.msg.ChainConfig().IsGasPointBlock(st.evm.Context.BlockNumber) {
@@ -254,8 +266,60 @@ func (st *StateTransition) buyGas() error {
 			// OK. Attempt to pay split gas!
 			remaining := big.NewInt(0).Sub(balance, st.value)
 			insufficientMgval := big.NewInt(0).Sub(mgval, remaining)
-
 			gasPointContractAddress := st.msg.ChainConfig().GasPoint.ContractAddress
+
+			// Check whether gas delegation by asset contract is available
+			if st.msg.ChainConfig().IsGasDelegationBlock(st.evm.Context.BlockNumber) {
+				assetContractAddr := st.msg.To()
+				if assetContractAddr != nil && (*assetContractAddr != common.Address{}) {
+					code := state.GetCode(*assetContractAddr)
+					if code != nil && bytes.Compare(code, []byte{}) != 0 {
+						checkerGasUsed, err := checkGasDelegationPolicy(st.consensusConfig, st.msg.ChainConfig().GasPoint.ContractAddress, *assetContractAddr, sender, mgval, state, st.evm)
+						if err != nil {
+							if err == errGasDelegationWhitelistDenied {
+								// OK. This is a just policy denied case, so let it go through rest of non-delegation logic!
+								log.Info("Gas delegation by fee payer is not possible. We will try paying gas with sender's gas point.", "assetContract", *assetContractAddr, "sender", sender.String(), "balance", balance, "value", st.value, "eth-gas", remaining, "point-gas", insufficientMgval, "checkerGasUsed", checkerGasUsed)
+							} else {
+								return err // unexpected vmerr occurred!
+							}
+						} else {
+							///////////////////////////////////////////////////////////////////////////////////////////
+							// Charge gas consumed by checkGasDelegationPolicy() to the delegator
+							totalGas += checkerGasUsed
+							delegatorExpense := big.NewInt(0).Mul(new(big.Int).SetUint64(checkerGasUsed), st.gasPrice)
+							mgval.Add(mgval, delegatorExpense)
+							if st.gasFeeCap != nil {
+								// re-calculate `balanceCheck`
+								balanceCheck = big.NewInt(0).Mul(new(big.Int).SetUint64(totalGas), st.gasFeeCap)
+								// Do not account for msg.value of original sender
+							} ///////////////////////////////////////////////////////////////////////////////////////////
+
+							insufficientWithDelegatorExpenseMgval := big.NewInt(0).Add(insufficientMgval, delegatorExpense)
+
+							if state.GetBalance(gasPointContractAddress).Cmp(insufficientWithDelegatorExpenseMgval) < 0 {
+								return errInsufficientBalanceForGas
+							}
+							if err := st.gp.SubGas(totalGas); err != nil {
+								return err
+							}
+							st.gas += totalGas
+							st.initialGas = totalGas
+							state.SubBalance(sender, remaining)                                              // consider preserved amount for `st.value`
+							state.SubBalance(gasPointContractAddress, insufficientWithDelegatorExpenseMgval) // consume gas point balance
+							st.splitGasPaid = true                                                           // mark as gas payment was split
+							st.delegatorExpenseGas = checkerGasUsed                                          // referred in TransitionDb() to substract intrinsic gas
+							st.gasPointPayoutMgval = insufficientWithDelegatorExpenseMgval                   // referred in refundGas()
+							st.gasDelegator = assetContractAddr                                              // used to refund gas point to delegator (same amount of gas will be refunded)
+							// Note: Gas point will be charged in refund logic later.
+							log.Info("Paying gas with delegator's gas point", "gasPointContractAddress", gasPointContractAddress.String(), "sender", sender.String(), "balance", balance, "value", st.value, "remaining", remaining, "insufficientMgval", insufficientMgval, "delegatorExpense", delegatorExpense)
+							return nil
+						}
+					}
+				}
+			}
+
+			// EOA case:
+			// Pay gas with gas point (will consume sender's gas point)
 			_, err := useGasPoint(st.consensusConfig, gasPointContractAddress, sender, insufficientMgval, state, st.evm)
 			if err != nil {
 				return err
@@ -266,6 +330,11 @@ func (st *StateTransition) buyGas() error {
 			//       because we don't know used gas amount of useGasPoint() prior to executing it.
 			//       Especially we have no choice other than additional execution of useGasPoint()
 			//       to update additional expense for delegation. It's too expensive overhead.
+			//
+			//       Moreover, due to the gas estimation logic in sender side where there is
+			//       no consideration of additional gas charge logic, we decided not to charge EOA(=sender)
+			//       this kind of additional gas fee for additional EVM execution to preserve EOA's budget.
+			//       But, we will charge additional gas fee to fee delegator. (i.e., asset contract)
 			******************************************************************************************/
 			///////////////////////////////////////////////////////////////////////////////////////////
 			// Charge gas consumed by useGasPoint() to the delegator
@@ -289,7 +358,7 @@ func (st *StateTransition) buyGas() error {
 			state.SubBalance(sender, remaining)                                                   // consider preserved amount for `st.value`
 			state.SubBalance(gasPointContractAddress, insufficientMgval /* + delegatorExpense */) // consume gas point balance
 			st.splitGasPaid = true                                                                // mark as gas payment was split
-			log.Info("Attempt to pay split gas", "from", sender.String(), "balance", balance, "value", st.value, "eth-gas", remaining, "point-gas", insufficientMgval)
+			log.Info("Pre-processing of gas payment with sender's gas point", "from", sender.String(), "balance", balance, "value", st.value, "eth-gas", remaining, "point-gas", insufficientMgval)
 		} else {
 			// OK. Original sender will pay for all gas!
 			if err := st.gp.SubGas(totalGas); err != nil {
@@ -385,13 +454,13 @@ func (st *StateTransition) preCheck() error {
 // TransitionDb will transition the state by applying the current message and
 // returning the evm execution result with following fields.
 //
-// - used gas:
-//      total gas used (including gas being refunded)
-// - returndata:
-//      the returned data from evm
-// - concrete execution error:
-//      various **EVM** error which aborts the execution,
-//      e.g. ErrOutOfGas, ErrExecutionReverted
+//   - used gas:
+//     total gas used (including gas being refunded)
+//   - returndata:
+//     the returned data from evm
+//   - concrete execution error:
+//     various **EVM** error which aborts the execution,
+//     e.g. ErrOutOfGas, ErrExecutionReverted
 //
 // However if any consensus issue encountered, return the error directly with
 // nil evm execution result.
@@ -445,6 +514,16 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gas, gas)
 	}
 	st.gas -= gas
+
+	// Subtract intrinsic gas to compensate for additional EVM call for delegation feasibility check.
+	if st.msg.ChainConfig().IsGasDelegationBlock(st.evm.Context.BlockNumber) {
+		if st.delegatorExpenseGas > 0 {
+			if st.gas < st.delegatorExpenseGas {
+				return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gas, st.delegatorExpenseGas)
+			}
+			st.gas -= st.delegatorExpenseGas
+		}
+	}
 
 	// Check clause 6
 	if msg.Value().Sign() > 0 && !st.evm.Context.CanTransfer(st.state, msg.From(), msg.Value()) {
@@ -557,6 +636,43 @@ func (st *StateTransition) refundGas(refundQuotient uint64) {
 	// Also return remaining gas to the block gas counter so it is
 	// available for the next transaction.
 	st.gp.AddGas(st.gas)
+
+	sender = st.msg.From() // reset sender to msg.from
+
+	// Settlement of gas debt to sync with gas point and eth gas, exchanged at the original rate.
+	if st.msg.ChainConfig().IsGasDelegationBlock(st.evm.Context.BlockNumber) {
+		gasPointContractAddress := st.msg.ChainConfig().GasPoint.ContractAddress
+		if st.gasDelegator != nil && st.gasPointPayoutMgval != nil { // 1. This is a post-processing of gas delegation, so additional calculations are required for settlement.
+			compare := st.gasPointPayoutMgval.Cmp(remaining)
+			if compare == 0 {
+				// OK. The amount to be refunded exactly matched the debt, so it was paid off.
+			} else if compare > 0 {
+				// Since the existing gas point debt is greater than the remaining gas amount, the gas point debt is still valid.
+				// Therefore, gas points must be deducted from the delegator's account.
+				diffMgval := big.NewInt(0).Sub(st.gasPointPayoutMgval, remaining)
+				_, err := useGasPoint(st.consensusConfig, gasPointContractAddress, *st.gasDelegator, diffMgval, st.state, st.evm) // consume gas point from delegator
+				if err != nil {
+					log.Error("consume gas point from delegator, useGasPoint() failed", "gasPointContractAddress", gasPointContractAddress.String(), "gasDelegator", st.gasDelegator.String(), "diffMgval", diffMgval, "gasPointPayoutMgval", st.gasPointPayoutMgval, "remaining", remaining, "err", err.Error())
+					//return err
+				}
+			} else {
+				// Amount of gas point dept consisting of total gas fee is smaller than ETH amount paied out. So remained ETH gas should be refunded to delegator with gas point.
+				// Such a small fraction case, in perspective of delegator, not used ETH gas converted into gas point!
+				diffMgval := big.NewInt(0).Sub(remaining, st.gasPointPayoutMgval)
+				_, err := putBackGasPoint(st.consensusConfig, gasPointContractAddress, *st.gasDelegator, diffMgval, st.state, st.evm) // return gas point to delegator
+				if err != nil {
+					log.Error("return gas point to delegator, putBackGasPoint() failed", "gasPointContractAddress", gasPointContractAddress.String(), "gasDelegator", st.gasDelegator.String(), "diffMgval", diffMgval, "gasPointPayoutMgval", st.gasPointPayoutMgval, "remaining", remaining, "err", err.Error())
+					//return err
+				}
+			}
+		} else if st.splitGasPaid && remaining.Cmp(big.NewInt(0)) > 0 { // 2. This is a pre-processed gas point payment case, so we must refund any remaining gas to sender (EOA).
+			_, err := putBackGasPoint(st.consensusConfig, gasPointContractAddress, sender, remaining, st.state, st.evm) // return gas point to sender (EOA)
+			if err != nil {
+				log.Error("return gas point to sender (EOA), putBackGasPoint() failed", "gasPointContractAddress", gasPointContractAddress.String(), "sender", sender.String(), "remaining", remaining, "err", err.Error())
+				//return err
+			}
+		}
+	}
 }
 
 // gasUsed returns the amount of gas used up by the state transition.
@@ -568,8 +684,16 @@ func checkWhitelist(consensusConfig *common.ConsensusConfig, dcAddr common.Addre
 	return callDC(consensusConfig, dcAddr, sender, mgval, state, evm, "d088070a000000000000000000000000", true)
 }
 
-func useGasPoint(consensusConfig *common.ConsensusConfig, dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
-	return callDC(consensusConfig, dcAddr, sender, mgval, state, evm, "aa75506b000000000000000000000000", false)
+func checkGasDelegationPolicy(consensusConfig *common.ConsensusConfig, assetRegistryAddr common.Address, assetAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
+	return callDC(consensusConfig, assetRegistryAddr, sender, mgval, state, evm, "d4cbcf04000000000000000000000000"+(assetAddr.Hex())[2:]+"000000000000000000000000", true)
+}
+
+func useGasPoint(consensusConfig *common.ConsensusConfig, gasPointContractAddr common.Address, spender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
+	return callDC(consensusConfig, gasPointContractAddr, spender, mgval, state, evm, "aa75506b000000000000000000000000", false)
+}
+
+func putBackGasPoint(consensusConfig *common.ConsensusConfig, gasPointContractAddr common.Address, receiver common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
+	return callDC(consensusConfig, gasPointContractAddr, receiver, mgval, state, evm, "ebb55cb7000000000000000000000000", false)
 }
 
 func callDC(consensusConfig *common.ConsensusConfig, dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM, abi string, useStaticCall bool) (uint64, error) {
@@ -647,4 +771,36 @@ func GetAvailableGasPoint(chainConfig *params.ChainConfig, chain ChainContext, h
 	// decode output data
 	log.Debug("getUserGasPoint()", "addr", dcAddress, "response", common.Bytes2Hex(res))
 	return gasPoint.SetBytes(res[:32]), nil
+}
+
+func GetGasDelegatedAssetContract(chainConfig *params.ChainConfig, chain ChainContext, header *types.Header, state *state.StateDB, assetContractAddr common.Address) (*big.Int, error) {
+	if chainConfig.GasPoint == nil || !chainConfig.IsGasPointBlock(header.Number) || !chainConfig.IsGasDelegationBlock(header.Number) {
+		return big.NewInt(0), nil
+	}
+	gasPointRegistryAddr := chainConfig.GasPoint.ContractAddress
+	code := state.GetCode(gasPointRegistryAddr)
+	if code == nil || bytes.Compare(code, []byte{}) == 0 {
+		log.Info("Incorrect gas point registry address", "gasPointRegistryAddr", gasPointRegistryAddr.String())
+		return nil, errIncorrectGasDelegationContractAddress
+	}
+	// ABI to invoke `getGasDelegatedAssetContract(address _account) public view returns (uint256)`
+	policy := big.NewInt(0)
+	ABI := append(common.Hex2Bytes("0cec5051000000000000000000000000"), assetContractAddr.Bytes()...)
+	log.Info("getGasDelegatedAssetContract()", "GasPointRegistry", gasPointRegistryAddr.String(), "ABI", common.Bytes2Hex(ABI))
+	// prepare message to execute
+	msg := types.NewMessage(chainConfig, common.HexToAddress(common.VirtualMinerAddress), &gasPointRegistryAddr, 0, big.NewInt(0), 90000000000, big.NewInt(0), nil, nil, ABI, nil, false)
+	context := NewEVMBlockContext(header, chain, nil)
+	txContext := NewEVMTxContext(msg)
+	evm := vm.NewEVM(context, txContext, state, chainConfig, vm.Config{})
+	res, _, vmerr := evm.StaticCall(vm.AccountRef(msg.From()), vm.AccountRef(*msg.To()).Address(), msg.Data(), msg.Gas())
+	if vmerr != nil {
+		// The only possible consensus-error would be if there wasn't
+		// sufficient balance to make the transfer happen. The first
+		// balance transfer may never fail.
+		log.Info("Accessing gas delegated asset contract failed", "gasPointRegistryAddr", gasPointRegistryAddr.String(), "from", msg.From().String(), "to", msg.To().String(), "data", common.Bytes2Hex(msg.Data()), "vm-error", vmerr.Error())
+		return nil, vmerr
+	}
+	// decode output data
+	log.Info("getGasDelegatedAssetContract()", "gasPointRegistryAddr", gasPointRegistryAddr.String(), "from", msg.From().String(), "to", msg.To().String(), "response", common.Bytes2Hex(res))
+	return policy.SetBytes(res[:32]), nil
 }

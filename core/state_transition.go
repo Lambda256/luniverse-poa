@@ -280,6 +280,7 @@ func (st *StateTransition) buyGas() error {
 								// OK. This is a just policy denied case, so let it go through rest of non-delegation logic!
 								log.Info("Gas delegation by fee payer is not possible. We will try paying gas with sender's gas point.", "assetContract", *assetContractAddr, "sender", sender.String(), "balance", balance, "value", st.value, "eth-gas", remaining, "point-gas", insufficientMgval, "checkerGasUsed", checkerGasUsed)
 							} else {
+								log.Error("Vm error propagation is a not expected case!", "assetContract", *assetContractAddr, "sender", sender.String(), "balance", balance, "value", st.value, "eth-gas", remaining, "point-gas", insufficientMgval, "checkerGasUsed", checkerGasUsed)
 								return err // unexpected vmerr occurred!
 							}
 						} else {
@@ -681,22 +682,26 @@ func (st *StateTransition) gasUsed() uint64 {
 }
 
 func checkWhitelist(consensusConfig *common.ConsensusConfig, dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
-	return callDC(consensusConfig, dcAddr, sender, mgval, state, evm, "d088070a000000000000000000000000", true)
+	return callDC(true, consensusConfig, dcAddr, sender, mgval, state, evm, "d088070a000000000000000000000000", true)
 }
 
+//func getGasDelegatedAssetContract(consensusConfig *common.ConsensusConfig, assetRegistryAddr common.Address, assetAddr common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
+//	return callDC(true, consensusConfig, assetRegistryAddr, assetAddr, mgval, state, evm, "0cec5051000000000000000000000000", true)
+//}
+
 func checkGasDelegationPolicy(consensusConfig *common.ConsensusConfig, assetRegistryAddr common.Address, assetAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
-	return callDC(consensusConfig, assetRegistryAddr, sender, mgval, state, evm, "d4cbcf04000000000000000000000000"+(assetAddr.Hex())[2:]+"000000000000000000000000", true)
+	return callDC(true, consensusConfig, assetRegistryAddr, sender, mgval, state, evm, "d4cbcf04000000000000000000000000"+(assetAddr.Hex())[2:]+"000000000000000000000000", true)
 }
 
 func useGasPoint(consensusConfig *common.ConsensusConfig, gasPointContractAddr common.Address, spender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
-	return callDC(consensusConfig, gasPointContractAddr, spender, mgval, state, evm, "aa75506b000000000000000000000000", false)
+	return callDC(false, consensusConfig, gasPointContractAddr, spender, mgval, state, evm, "aa75506b000000000000000000000000", false)
 }
 
 func putBackGasPoint(consensusConfig *common.ConsensusConfig, gasPointContractAddr common.Address, receiver common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM) (uint64, error) {
-	return callDC(consensusConfig, gasPointContractAddr, receiver, mgval, state, evm, "ebb55cb7000000000000000000000000", false)
+	return callDC(false, consensusConfig, gasPointContractAddr, receiver, mgval, state, evm, "ebb55cb7000000000000000000000000", false)
 }
 
-func callDC(consensusConfig *common.ConsensusConfig, dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM, abi string, useStaticCall bool) (uint64, error) {
+func callDC(ignoreExecutionRevertedVmError bool, consensusConfig *common.ConsensusConfig, dcAddr common.Address, sender common.Address, mgval *big.Int, state vm.StateDB, evm *vm.EVM, abi string, useStaticCall bool) (uint64, error) {
 	code := state.GetCode(dcAddr)
 	if code == nil || bytes.Compare(code, []byte{}) == 0 {
 		log.Info("Incorrect DC address", "addr", dcAddr)
@@ -725,6 +730,10 @@ func callDC(consensusConfig *common.ConsensusConfig, dcAddr common.Address, send
 		res, leftOverGas, vmerr = evm.Call(vm.AccountRef(common.HexToAddress(common.VirtualMinerAddress)), dcAddr, data, checkerInitialGas, big.NewInt(0))
 	}
 	if vmerr != nil {
+		if ignoreExecutionRevertedVmError {
+			// to prevent propagation of revert error occurred in the context of checker function (no need to propagate this kind of casual check error)
+			return checkerInitialGas - leftOverGas, errGasDelegationWhitelistDenied
+		}
 		// The only possible consensus-error would be if there wasn't
 		// sufficient balance to make the transfer happen. The first
 		// balance transfer may never fail.

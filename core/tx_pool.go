@@ -243,10 +243,11 @@ type TxPool struct {
 	signer      types.Signer
 	mu          sync.RWMutex
 
-	istanbul         bool // Fork indicator whether we are in the istanbul stage.
-	eip2718          bool // Fork indicator whether we are using EIP-2718 type transactions.
-	eip1559          bool // Fork indicator whether we are using EIP-1559 type transactions.
-	gasPointHardfork bool
+	istanbul              bool // Fork indicator whether we are in the istanbul stage.
+	eip2718               bool // Fork indicator whether we are using EIP-2718 type transactions.
+	eip1559               bool // Fork indicator whether we are using EIP-1559 type transactions.
+	gasPointHardfork      bool // Fork indicator whether we are in the GasPoint stage.
+	gasDelegationHardfork bool // Fork indicator whether we are in the GasDelegation stage.
 
 	currentState  *state.StateDB // Current state in the blockchain head
 	pendingNonces *txNoncer      // Pending state tracking virtual nonces
@@ -366,6 +367,9 @@ func (pool *TxPool) loop() {
 			if ev.Block != nil {
 				if pool.chainconfig.IsGasPointBlock(ev.Block.Number()) {
 					pool.gasPointHardfork = true
+				}
+				if pool.chainconfig.IsGasDelegationBlock(ev.Block.Number()) {
+					pool.gasDelegationHardfork = true
 				}
 				pool.requestReset(head.Header(), ev.Block.Header())
 				head = ev.Block
@@ -649,6 +653,12 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	}
 	// Transactor should have enough funds to cover the costs
 	// cost == V + GP * GL
+	if pool.gasDelegationHardfork && tx.To() != nil {
+		res := pool.getGasDelegatedAssetContract(*tx.To())
+		if res != 0 {
+			tx.StoreGasPointDelegator(tx.To())
+		}
+	}
 	cost := tx.Cost(pool.chainconfig)
 	value := tx.Value()
 	balance := pool.currentState.GetBalance(from)
@@ -1607,6 +1617,21 @@ func (pool *TxPool) demoteUnexecutables() {
 			delete(pool.pending, addr)
 		}
 	}
+}
+
+func (pool *TxPool) getGasDelegatedAssetContract(assetContractAddr common.Address) uint64 {
+	if pool.chainconfig.GasPoint != nil && pool.gasDelegationHardfork {
+		var err error
+		res, err := GetGasDelegatedAssetContract(pool.chainconfig, pool.chain, pool.chain.CurrentBlock().Header(), pool.currentState, assetContractAddr)
+		if err != nil {
+			return 0 // zero means not registered asset contract
+		}
+		if res == nil {
+			return 0 // zero means not registered asset contract
+		}
+		return res.Uint64()
+	}
+	return 0 // zero means not registered asset contract
 }
 
 func (pool *TxPool) updateGasPoint(addr common.Address) (*big.Int, error) {

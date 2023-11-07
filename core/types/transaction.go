@@ -59,7 +59,8 @@ type Transaction struct {
 	size atomic.Value
 	from atomic.Value
 
-	gasDelegator atomic.Value
+	ethGasDelegator   atomic.Value // native ETH version
+	gasPointDelegator atomic.Value // wrapped point version
 }
 
 // NewTx creates a new transaction.
@@ -291,6 +292,15 @@ func (tx *Transaction) To() *common.Address {
 	return copyAddressPtr(tx.inner.to())
 }
 
+// StoreGasPointDelegator Check feasibility of gas point delegation with msg.from()
+func (tx *Transaction) StoreGasPointDelegator(delegator *common.Address) {
+	if delegator == nil {
+		tx.gasPointDelegator.Store(common.Address{})
+	} else {
+		tx.gasPointDelegator.Store(*delegator)
+	}
+}
+
 // Cost returns gas * gasPrice + value.
 func (tx *Transaction) Cost(chainConfig *params.ChainConfig) *big.Int {
 	/*
@@ -300,23 +310,25 @@ func (tx *Transaction) Cost(chainConfig *params.ChainConfig) *big.Int {
 	*/
 	total := new(big.Int).SetInt64(0)
 
-	gasDelegator := common.Address{}
-	if tmp := tx.gasDelegator.Load(); tmp != nil {
-		gasDelegator = tmp.(common.Address)
+	ethGasDelegator := common.Address{}
+	if tmp := tx.ethGasDelegator.Load(); tmp != nil {
+		ethGasDelegator = tmp.(common.Address)
 	} else {
 		_, __gasDelegator := extractExtensionFields(tx.Data())
 		if __gasDelegator == nil {
-			tx.gasDelegator.Store(common.Address{})
+			tx.ethGasDelegator.Store(common.Address{})
 		} else {
-			gasDelegator = *__gasDelegator
-			tx.gasDelegator.Store(*__gasDelegator)
+			ethGasDelegator = *__gasDelegator
+			tx.ethGasDelegator.Store(*__gasDelegator)
 		}
 	}
 
 	if chainConfig.GasFree != nil {
 		// system SHOULD pay for all gas
-	} else if gasDelegator != (common.Address{}) {
+	} else if ethGasDelegator != (common.Address{}) {
 		// delegator SHOULD pay for all gas
+	} else if gasPointDelegator := tx.gasPointDelegator.Load(); gasPointDelegator != nil && gasPointDelegator.(common.Address) != (common.Address{}) {
+		// gas point delegator SHOULD pay for all gas
 	} else {
 		// Not a `Gas-Free` and `Gas-Delegation` case.
 		// Therefore, sender should pay for Gas-fee.
@@ -681,7 +693,7 @@ func copyAddressPtr(a *common.Address) *common.Address {
 	return &cpy
 }
 
-// Extract `gasDelegator` if present
+// Extract `ethGasDelegator` if present
 func extractExtensionFields(payload []byte) ([]byte, *common.Address) {
 	data := payload
 	gasDelegator := (*common.Address)(nil)
@@ -691,7 +703,7 @@ func extractExtensionFields(payload []byte) ([]byte, *common.Address) {
 		data = payload[:payloadLen-26]
 		tmp := common.BytesToAddress(payload[payloadLen-20:])
 		gasDelegator = &tmp
-		log.Info("::: Extension :::", "gasDelegator", gasDelegator)
+		log.Info("::: Extension :::", "ethGasDelegator", gasDelegator)
 	}
 	return data, gasDelegator
 }

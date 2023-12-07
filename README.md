@@ -6,10 +6,10 @@ We would like to express best respect and gratitude to `go-ethereum` open source
 
 ## Build
 
-Building Luniverse-PoA node executables, namely `bootnode` and `geth`, requires both a Go-Lang (version 1.9.4) and a C compiler.
+Building Luniverse-PoA node executables, namely `bootnode` and `geth`, requires both a Go-Lang (version 1.20) and a C compiler.
 You can install them using your favorite package manager or source tarball.
 
-For golang 1.20 in linux, you can use the following link. (Use Go version 1.20 or later)
+For golang 1.20 in linux, you can use the following link.
 ```
 https://go.dev/dl/go1.20.linux-amd64.tar.gz
 ```

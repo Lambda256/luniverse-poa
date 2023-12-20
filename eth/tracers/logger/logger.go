@@ -196,6 +196,7 @@ func (l *StructLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, s
 		rdata = make([]byte, len(rData))
 		copy(rdata, rData)
 	}
+
 	// create a new snapshot of the EVM.
 	log := StructLog{pc, op, gas, cost, mem, memory.Len(), stck, rdata, storage, depth, l.env.StateDB.GetRefund(), err}
 	l.logs = append(l.logs, log)

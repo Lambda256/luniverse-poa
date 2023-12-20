@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -75,7 +76,7 @@ func (leth *LightEthereum) stateAtTransaction(ctx context.Context, block *types.
 		if leth.chainConfig != nil && leth.chainConfig.Clique != nil && leth.chainConfig.Clique.HasConsensusConfiguration() {
 			consensusConfig = core.RetrieveConsensusConfigurations(leth.BlockChain(), parent.Header(), statedb, leth.chainConfig)
 		}
-		if _, err := core.ApplyMessage(consensusConfig, vmenv, msg, new(core.GasPool).AddGas(tx.Gas())); err != nil {
+		if _, err := core.ApplyMessage(consensusConfig, vmenv, msg, new(core.GasPool).AddGas(tx.Gas()+(params.TxGas*2))); err != nil {
 			return nil, nil, vm.BlockContext{}, nil, fmt.Errorf("transaction %#x failed: %v", tx.Hash(), err)
 		}
 		// Ensure any modifications are committed to the state

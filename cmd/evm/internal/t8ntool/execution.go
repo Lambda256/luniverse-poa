@@ -146,9 +146,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		chainConfig.DAOForkBlock.Cmp(new(big.Int).SetUint64(pre.Env.Number)) == 0 {
 		misc.ApplyDAOHardFork(statedb)
 	}
-	if chainConfig.MilkBridge != nil && chainConfig.MilkBridgeForkBlock != nil && chainConfig.MilkBridgeForkBlock.Cmp(new(big.Int).SetUint64(pre.Env.Number)) == 0 {
-		misc.ApplyMilkBridgeHardFork(statedb, chainConfig)
-	}
 
 	for i, tx := range txs {
 		msg, err := tx.AsMessage(chainConfig, signer, pre.Env.BaseFee)

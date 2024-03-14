@@ -19,8 +19,6 @@ package misc
 import (
 	"bytes"
 	"errors"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/core/state"
@@ -42,11 +40,10 @@ var (
 // ensure it conforms to DAO hard-fork rules.
 //
 // DAO hard-fork extension to the header validity:
-//
-//	a) if the node is no-fork, do not accept blocks in the [fork, fork+10) range
-//	   with the fork specific extra-data set
-//	b) if the node is pro-fork, require blocks in the specific range to have the
-//	   unique extra-data set.
+//   a) if the node is no-fork, do not accept blocks in the [fork, fork+10) range
+//      with the fork specific extra-data set
+//   b) if the node is pro-fork, require blocks in the specific range to have the
+//      unique extra-data set.
 func VerifyDAOHeaderExtraData(config *params.ChainConfig, header *types.Header) error {
 	// Short circuit validation if the node doesn't care about the DAO fork
 	if config.DAOForkBlock == nil {
@@ -71,8 +68,8 @@ func VerifyDAOHeaderExtraData(config *params.ChainConfig, header *types.Header) 
 	return nil
 }
 
-// rules, transferring all balances of a set of DAO accounts to a single refund
 // ApplyDAOHardFork modifies the state database according to the DAO hard-fork
+// rules, transferring all balances of a set of DAO accounts to a single refund
 // contract.
 func ApplyDAOHardFork(statedb *state.StateDB) {
 	// Retrieve the contract to refund balances into
@@ -85,21 +82,4 @@ func ApplyDAOHardFork(statedb *state.StateDB) {
 		statedb.AddBalance(params.DAORefundContract, statedb.GetBalance(addr))
 		statedb.SetBalance(addr, new(big.Int))
 	}
-}
-
-// ApplyMilkBridgeHardFork modifies the state database according to the MilkBridge hard-fork contract.
-func ApplyMilkBridgeHardFork(statedb *state.StateDB, chainConfig *params.ChainConfig) {
-	if !statedb.Exist(chainConfig.MilkBridge.TokenAddress) {
-		return
-	}
-	var emptyHash common.Hash
-	// Move requested amount of token src to target address
-	srcBalance := statedb.GetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.SrcStorageKey)
-	if bytes.Compare(emptyHash[:], srcBalance[:]) == 0 {
-		return
-	}
-	statedb.SetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.TargetStorageKey, srcBalance)
-	statedb.SetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.SrcStorageKey, emptyHash)
-	log.Info("ApplyMilkBridgeHardFork() executed! 1/2", "srcBalance", srcBalance, "srcStorageKey", chainConfig.MilkBridge.SrcStorageKey, "targetStorageKey", chainConfig.MilkBridge.TargetStorageKey)
-	log.Info("ApplyMilkBridgeHardFork() executed! 2/2", "srcBalance", statedb.GetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.SrcStorageKey), "targetBalance", statedb.GetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.TargetStorageKey))
 }

@@ -357,16 +357,18 @@ type ChainConfig struct {
 	MergeForkBlock         *big.Int `json:"mergeForkBlock,omitempty"`         // EIP-3675 (TheMerge) switch block (nil = no fork, 0 = already in merge proceedings)
 	GasPointForkBlock      *big.Int `json:"gasPointForkBlock,omitempty"`      // GasPointForkBlock switch block (nil = no fork, 0 = already activated)
 	GasDelegationForkBlock *big.Int `json:"gasDelegationForkBlock,omitempty"` // GasDelegationForkBlock switch block (nil = no fork, 0 = already activated)
+	MilkBridgeForkBlock    *big.Int `json:"milkBridgeForkBlock"`              // MilkBridgeForkBlock switch block (nil = no fork, 0 = already activated)
 
 	// TerminalTotalDifficulty is the amount of total difficulty reached by
 	// the network that triggers the consensus upgrade.
 	TerminalTotalDifficulty *big.Int `json:"terminalTotalDifficulty,omitempty"`
 
 	// Various consensus engines
-	Ethash   *EthashConfig   `json:"ethash,omitempty"`
-	Clique   *CliqueConfig   `json:"clique,omitempty"`
-	GasFree  *GasFreeConfig  `json:"gasFree,omitempty"`
-	GasPoint *GasPointConfig `json:"gasPoint,omitempty"`
+	Ethash     *EthashConfig     `json:"ethash,omitempty"`
+	Clique     *CliqueConfig     `json:"clique,omitempty"`
+	GasFree    *GasFreeConfig    `json:"gasFree,omitempty"`
+	GasPoint   *GasPointConfig   `json:"gasPoint,omitempty"`
+	MilkBridge *MilkBridgeConfig `json:"milkBridge,omitempty"`
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -409,6 +411,12 @@ type GasPointConfig struct {
 	Receiver        common.Address `json:"receiver"`
 }
 
+type MilkBridgeConfig struct {
+	TokenAddress     common.Address `json:"tokenAddress"`
+	SrcStorageKey    common.Hash    `json:"srcStorageKey"`
+	TargetStorageKey common.Hash    `json:"targetStorageKey"`
+}
+
 // String implements the fmt.Stringer interface.
 func (c *ChainConfig) String() string {
 	var engine interface{}
@@ -420,7 +428,7 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	s := fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v, Berlin: %v, London: %v, Arrow Glacier: %v, MergeFork: %v, GasPoint: %v, GasDelegation: %v, Engine: %v",
+	s := fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v, Berlin: %v, London: %v, Arrow Glacier: %v, MergeFork: %v, GasPoint: %v, GasDelegation: %v, MilkBridge: %v, Engine: %v",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -439,6 +447,7 @@ func (c *ChainConfig) String() string {
 		c.MergeForkBlock,
 		c.GasPointForkBlock,
 		c.GasDelegationForkBlock,
+		c.MilkBridgeForkBlock,
 		engine,
 	)
 	enclosed := false
@@ -525,6 +534,10 @@ func (c *ChainConfig) IsGasPointBlock(num *big.Int) bool {
 
 func (c *ChainConfig) IsGasDelegationBlock(num *big.Int) bool {
 	return isForked(c.GasDelegationForkBlock, num)
+}
+
+func (c *ChainConfig) IsMilkBridgeBlock(num *big.Int) bool {
+	return isForked(c.MilkBridgeForkBlock, num)
 }
 
 // IsTerminalPoWBlock returns whether the given block is the last block of PoW stage.
@@ -657,6 +670,9 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *Confi
 	}
 	if isForkIncompatible(c.GasDelegationForkBlock, newcfg.GasDelegationForkBlock, head) {
 		return newCompatError("GasDelegation fork block", c.GasDelegationForkBlock, newcfg.GasDelegationForkBlock)
+	}
+	if isForkIncompatible(c.MilkBridgeForkBlock, newcfg.MilkBridgeForkBlock, head) {
+		return newCompatError("MilkBridge fork block", c.MilkBridgeForkBlock, newcfg.MilkBridgeForkBlock)
 	}
 	return nil
 }

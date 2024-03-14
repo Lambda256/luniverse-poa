@@ -146,8 +146,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		chainConfig.DAOForkBlock.Cmp(new(big.Int).SetUint64(pre.Env.Number)) == 0 {
 		misc.ApplyDAOHardFork(statedb)
 	}
-	if chainConfig.MilkBridge != nil && chainConfig.MilkBridgeForkBlock != nil && chainConfig.MilkBridgeForkBlock.Cmp(new(big.Int).SetUint64(pre.Env.Number)) == 0 {
-		misc.ApplyMilkBridgeHardFork(statedb, chainConfig)
+	if chainConfig.EnhancedBridge != nil && chainConfig.EnhancedBridgeForkBlock != nil && chainConfig.EnhancedBridgeForkBlock.Cmp(new(big.Int).SetUint64(pre.Env.Number)) == 0 {
+		misc.ApplyEnhancedBridgeHardFork(statedb, chainConfig)
 	}
 
 	for i, tx := range txs {

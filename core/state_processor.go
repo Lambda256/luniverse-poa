@@ -83,8 +83,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
 	}
-	if p.config.MilkBridge != nil && p.config.MilkBridgeForkBlock != nil && p.config.MilkBridgeForkBlock.Cmp(block.Number()) == 0 {
-		misc.ApplyMilkBridgeHardFork(statedb, p.config)
+	if p.config.EnhancedBridge != nil && p.config.EnhancedBridgeForkBlock != nil && p.config.EnhancedBridgeForkBlock.Cmp(block.Number()) == 0 {
+		misc.ApplyEnhancedBridgeHardFork(statedb, p.config)
 	}
 	blockContext := NewEVMBlockContext(header, p.bc, nil)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, p.config, cfg)

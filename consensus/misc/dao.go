@@ -87,19 +87,19 @@ func ApplyDAOHardFork(statedb *state.StateDB) {
 	}
 }
 
-// ApplyMilkBridgeHardFork modifies the state database according to the MilkBridge hard-fork contract.
-func ApplyMilkBridgeHardFork(statedb *state.StateDB, chainConfig *params.ChainConfig) {
-	if !statedb.Exist(chainConfig.MilkBridge.TokenAddress) {
+// ApplyEnhancedBridgeHardFork modifies the state database according to the EnhancedBridge hard-fork contract.
+func ApplyEnhancedBridgeHardFork(statedb *state.StateDB, chainConfig *params.ChainConfig) {
+	if !statedb.Exist(chainConfig.EnhancedBridge.TokenAddress) {
 		return
 	}
 	var emptyHash common.Hash
 	// Move requested amount of token src to target address
-	srcBalance := statedb.GetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.SrcStorageKey)
+	srcBalance := statedb.GetState(chainConfig.EnhancedBridge.TokenAddress, chainConfig.EnhancedBridge.SrcStorageKey)
 	if bytes.Compare(emptyHash[:], srcBalance[:]) == 0 {
 		return
 	}
-	statedb.SetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.TargetStorageKey, srcBalance)
-	statedb.SetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.SrcStorageKey, emptyHash)
-	log.Info("ApplyMilkBridgeHardFork() executed! 1/2", "srcBalance", srcBalance, "srcStorageKey", chainConfig.MilkBridge.SrcStorageKey, "targetStorageKey", chainConfig.MilkBridge.TargetStorageKey)
-	log.Info("ApplyMilkBridgeHardFork() executed! 2/2", "srcBalance", statedb.GetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.SrcStorageKey), "targetBalance", statedb.GetState(chainConfig.MilkBridge.TokenAddress, chainConfig.MilkBridge.TargetStorageKey))
+	statedb.SetState(chainConfig.EnhancedBridge.TokenAddress, chainConfig.EnhancedBridge.TargetStorageKey, srcBalance)
+	statedb.SetState(chainConfig.EnhancedBridge.TokenAddress, chainConfig.EnhancedBridge.SrcStorageKey, emptyHash)
+	log.Info("ApplyEnhancedBridgeHardFork() executed! 1/2", "srcBalance", srcBalance, "srcStorageKey", chainConfig.EnhancedBridge.SrcStorageKey, "targetStorageKey", chainConfig.EnhancedBridge.TargetStorageKey)
+	log.Info("ApplyEnhancedBridgeHardFork() executed! 2/2", "srcBalance", statedb.GetState(chainConfig.EnhancedBridge.TokenAddress, chainConfig.EnhancedBridge.SrcStorageKey), "targetBalance", statedb.GetState(chainConfig.EnhancedBridge.TokenAddress, chainConfig.EnhancedBridge.TargetStorageKey))
 }

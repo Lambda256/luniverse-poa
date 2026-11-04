@@ -252,7 +252,7 @@ func (st *StateTransition) buyGas() error {
 			} ///////////////////////////////////////////////////////////////////////////////////////////
 
 			if st.msg.ChainConfig().IsGasDelegationBlock(st.evm.Context.BlockNumber) {
-				st.delegatorExpenseGas = checkerGasUsed // referred in TransitionDb() to substract intrinsic gas
+				st.delegatorExpenseGas = checkerGasUsed // referred in TransitionDb() to subtract intrinsic gas
 			}
 		}
 		sender = *gasDelegationContractAddr
@@ -308,7 +308,7 @@ func (st *StateTransition) buyGas() error {
 							state.SubBalance(sender, remaining)                                              // consider preserved amount for `st.value`
 							state.SubBalance(gasPointContractAddress, insufficientWithDelegatorExpenseMgval) // consume gas point balance
 							st.splitGasPaid = true                                                           // mark as gas payment was split
-							st.delegatorExpenseGas = checkerGasUsed                                          // referred in TransitionDb() to substract intrinsic gas
+							st.delegatorExpenseGas = checkerGasUsed                                          // referred in TransitionDb() to subtract intrinsic gas
 							st.gasPointPayoutMgval = insufficientWithDelegatorExpenseMgval                   // referred in refundGas()
 							st.gasDelegator = assetContractAddr                                              // used to refund gas point to delegator (same amount of gas will be refunded)
 							// Note: Gas point will be charged in refund logic later.

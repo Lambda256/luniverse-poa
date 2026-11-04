@@ -20,7 +20,7 @@ var StakingContractAddress = "0x00000000000000000000000000000000000001fb"    // 
 var BoardMemberContractAddress = "0x0000000000000000000000000000000000000213" // 531
 //=============================================================================================
 
-// Block rewrad information (This information is retrieved from contract)
+// Block reward information (This information is retrieved from contract)
 type RewardPool struct {
 	Addr  *string `json:"addr"`
 	Ratio *uint16 `json:"ratio"`

@@ -147,7 +147,11 @@ var (
 	// This is the version of go that will be downloaded by
 	//
 	//     go run ci.go install -dlgo
-	dlgoVersion = "1.17.5"
+	//
+	// NOTE(luniverse): -dlgo is only referenced by the legacy upstream
+	// .travis.yml / appveyor.yml, which appear to be unused here. Kept in
+	// sync with the go directive in go.mod.
+	dlgoVersion = "1.26.10"
 )
 
 var GOBIN, _ = filepath.Abs(filepath.Join("build", "bin"))

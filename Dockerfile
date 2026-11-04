@@ -4,7 +4,7 @@ ARG VERSION=""
 ARG BUILDNUM=""
 
 # Build Geth in a stock Go builder container
-FROM golang:1.17-alpine as builder
+FROM golang:1.26.10-alpine AS builder
 
 RUN apk add --no-cache gcc musl-dev linux-headers git
 
@@ -15,9 +15,16 @@ RUN cd /go-ethereum && go run build/ci.go install ./cmd/geth
 FROM alpine:latest
 
 RUN apk add --no-cache ca-certificates
+# Run as an unprivileged user (uid 1000, like the ubuntu user on the hosts)
+# so that bind-mounted host data dirs keep working. Default datadir is
+# /home/geth/.ethereum; pass --datadir to use another mounted path.
+RUN adduser -D -u 1000 -h /home/geth geth && \
+    install -d -o geth -g geth /home/geth/.ethereum
 COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
 
 EXPOSE 8545 8546 30303 30303/udp
+USER geth
+WORKDIR /home/geth
 ENTRYPOINT ["geth"]
 
 # Add some metadata labels to help programatic image consumption

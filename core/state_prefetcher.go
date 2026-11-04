@@ -17,8 +17,9 @@
 package core
 
 import (
-	"github.com/ethereum/go-ethereum/common"
 	"sync/atomic"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"

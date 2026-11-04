@@ -24,12 +24,15 @@ type KMSEncryptAPI interface {
 
 // EncryptText encrypts some text using an AWS Key Management Service (AWS KMS) customer master key (CMK).
 // Inputs:
-//     c is the context of the method call, which includes the AWS Region.
-//     api is the interface that defines the method call.
-//     input defines the input arguments to the service call.
+//
+//	c is the context of the method call, which includes the AWS Region.
+//	api is the interface that defines the method call.
+//	input defines the input arguments to the service call.
+//
 // Output:
-//     If success, an EncryptOutput object containing the result of the service call and nil.
-//     Otherwise, nil and an error from the call to Encrypt.
+//
+//	If success, an EncryptOutput object containing the result of the service call and nil.
+//	Otherwise, nil and an error from the call to Encrypt.
 func EncryptText(c context.Context, api KMSEncryptAPI, input *kms.EncryptInput) (*kms.EncryptOutput, error) {
 	return api.Encrypt(c, input)
 }

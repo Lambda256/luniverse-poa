@@ -20,8 +20,9 @@ import "fmt"
 
 // not supported method
 type notSupportedMethodError struct{}
+
 func (e *notSupportedMethodError) ErrorCode() int { return -32601 }
-func (e *notSupportedMethodError) Error() string { return "Not supported method" }
+func (e *notSupportedMethodError) Error() string  { return "Not supported method" }
 
 // HTTPError is returned by client operations when the HTTP status code of the
 // response is not a 2xx status.

@@ -3,6 +3,7 @@ package kms
 import (
 	"context"
 	b64 "encoding/base64"
+
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/ethereum/go-ethereum/log"

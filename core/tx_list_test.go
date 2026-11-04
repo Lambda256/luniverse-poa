@@ -17,10 +17,11 @@
 package core
 
 import (
-	"github.com/ethereum/go-ethereum/params"
 	"math/big"
 	"math/rand"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"

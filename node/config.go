@@ -190,7 +190,7 @@ type Config struct {
 
 	// AllowUnprotectedTxs allows non EIP-155 protected transactions to be send over RPC.
 	AllowUnprotectedTxs bool `toml:",omitempty"`
-	
+
 	RPCDebugLogging bool `toml:",omitempty"`
 }
 

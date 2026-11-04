@@ -1,3 +1,7 @@
+# NOTE(luniverse): legacy upstream go-ethereum CI config. It appears to be
+# unused in this repository and its Go versions are not maintained
+# (go.mod requires Go 1.26).
+
 language: go
 go_import_path: github.com/ethereum/go-ethereum
 sudo: false

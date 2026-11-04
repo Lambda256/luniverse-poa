@@ -684,7 +684,7 @@ func signer(c *cli.Context) error {
 	if !c.GlobalBool(utils.IPCDisabledFlag.Name) {
 		givenPath := c.GlobalString(utils.IPCPathFlag.Name)
 		ipcapiURL = ipcEndpoint(filepath.Join(givenPath, "clef.ipc"), configDir)
-		listener, _, err := rpc.StartIPCEndpoint(ipcapiURL, rpcAPI)
+		listener, _, err := rpc.StartIPCEndpoint(ipcapiURL, rpcAPI, false)
 		if err != nil {
 			utils.Fatalf("Could not start IPC api: %v", err)
 		}

@@ -20,9 +20,10 @@ import (
 	"bytes"
 	crand "crypto/rand"
 	"errors"
-	"github.com/ethereum/go-ethereum/consensus"
 	"math/big"
 	mrand "math/rand"
+
+	"github.com/ethereum/go-ethereum/consensus"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"

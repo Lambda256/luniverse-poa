@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 package main
@@ -22,12 +24,15 @@ type KMSDecryptAPI interface {
 
 // DecodeData decrypts some text that was encrypted with an AWS Key Management Service (AWS KMS) customer master key (CMK).
 // Inputs:
-//     c is the context of the method call, which includes the AWS Region.
-//     api is the interface that defines the method call.
-//     input defines the input arguments to the service call.
+//
+//	c is the context of the method call, which includes the AWS Region.
+//	api is the interface that defines the method call.
+//	input defines the input arguments to the service call.
+//
 // Output:
-//     If success, a DecryptOutput object containing the result of the service call and nil.
-//     Otherwise, nil and an error from the call to Decrypt.
+//
+//	If success, a DecryptOutput object containing the result of the service call and nil.
+//	Otherwise, nil and an error from the call to Decrypt.
 func DecodeData(c context.Context, api KMSDecryptAPI, input *kms.DecryptInput) (*kms.DecryptOutput, error) {
 	return api.Decrypt(c, input)
 }

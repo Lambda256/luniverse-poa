@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 package main
@@ -5,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 )
@@ -22,12 +25,15 @@ type KMSCreateKeyAPI interface {
 
 // MakeKey creates an AWS Key Management Service (AWS KMS) customer master key (CMK).
 // Inputs:
-//     c is the context of the method call, which includes the AWS Region.
-//     api is the interface that defines the method call.
-//     input defines the input arguments to the service call.
+//
+//	c is the context of the method call, which includes the AWS Region.
+//	api is the interface that defines the method call.
+//	input defines the input arguments to the service call.
+//
 // Output:
-//     If success, a CreateKeyOutput object containing the result of the service call and nil.
-//     Otherwise, nil and an error from the call to CreateKey.
+//
+//	If success, a CreateKeyOutput object containing the result of the service call and nil.
+//	Otherwise, nil and an error from the call to CreateKey.
 func MakeKey(c context.Context, api KMSCreateKeyAPI, input *kms.CreateKeyInput) (*kms.CreateKeyOutput, error) {
 	return api.CreateKey(c, input)
 }

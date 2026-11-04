@@ -20,12 +20,13 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/state"
 	"math"
 	"math/big"
 	mrand "math/rand"
 	"sync/atomic"
 	"time"
+
+	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"

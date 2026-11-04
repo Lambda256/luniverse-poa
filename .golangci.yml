@@ -36,12 +36,6 @@ linters:
           - staticcheck
         path: (consensus/clique/clique|consensus/misc/dao|core/state_transition|core/types/transaction)\.go
         text: "S100[49]:"
-      # Value receivers on Ethereum copy its mutex; changing them would change
-      # the method set of eth.Ethereum.
-      - linters:
-          - govet
-        path: eth/backend\.go
-        text: "copylocks:"
     paths:
       - third_party$
       - builtin$

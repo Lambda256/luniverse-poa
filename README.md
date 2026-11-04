@@ -6,12 +6,12 @@ We would like to express best respect and gratitude to `go-ethereum` open source
 
 ## Build
 
-Building Luniverse-PoA node executables, namely `bootnode` and `geth`, requires both a Go-Lang (version 1.20) and a C compiler.
+Building Luniverse-PoA node executables, namely `bootnode` and `geth`, requires both Go (version 1.26 or later, tested with 1.26.10) and a C compiler.
 You can install them using your favorite package manager or source tarball.
 
-For golang 1.20 in linux, you can use the following link.
+For Go 1.26.10 on linux, you can use the following link.
 ```
-https://go.dev/dl/go1.20.linux-amd64.tar.gz
+https://go.dev/dl/go1.26.10.linux-amd64.tar.gz
 ```
 
 For compiler suite in Ubuntu, you can use the following command. In other systems, you need to check your package manager.
@@ -28,6 +28,14 @@ To build only p2p node, run
 ```bash
 $ make geth
 ```
+
+### Docker
+
+```bash
+$ docker build -t luniverse-poa .
+```
+
+The image runs `geth` as the unprivileged user `geth` (uid 1000), not as root. The default data directory inside the container is `/home/geth/.ethereum`. When you mount a host directory, make sure it is owned by uid 1000, or pass `--datadir` with another writable path.
 
 ## Executables
 

@@ -21,15 +21,13 @@ sudo apt-get install -y build-essential
 
 Once the dependencies are installed, move to root directory of repository then run
 ```bash
-$ go run build/ci.go install ./cmd/geth ./cmd/bootnode
+$ make all
 ```
 
 To build only p2p node, run
 ```bash
 $ make geth
 ```
-
-*Note: `make all` builds every command in `cmd/`, but it currently fails because `clef` and `evm` do not compile on this fork. They are not needed to run a Luniverse-PoA network.*
 
 ### Docker
 

@@ -21,13 +21,15 @@ sudo apt-get install -y build-essential
 
 Once the dependencies are installed, move to root directory of repository then run
 ```bash
-$ make all
+$ go run build/ci.go install ./cmd/geth ./cmd/bootnode
 ```
 
 To build only p2p node, run
 ```bash
 $ make geth
 ```
+
+*Note: `make all` builds every command in `cmd/`, but it currently fails because `clef` and `evm` do not compile on this fork. They are not needed to run a Luniverse-PoA network.*
 
 ### Docker
 
@@ -250,7 +252,7 @@ $ export BOOTNODE_IP=$(ifconfig | grep -E 'eth0|ens' -A1 | grep 'inet' | awk '{ 
 ```
 Then prepare CIDRs for your subnet.
 ```bash
-$ export BOOTNODE_CIDRS=$(echo $ip | awk -F. '{printf "%s.%s.%s.0/24", $1, $2, $3}')
+$ export BOOTNODE_CIDRS=$(echo $BOOTNODE_IP | awk -F. '{printf "%s.%s.%s.0/24", $1, $2, $3}')
 ```
 
 5. Run `boonode` executable with flags.
@@ -306,27 +308,30 @@ $ export POA_BOOTNODES=enode://d625da2dfaab064a080c39fda06426c6d27e92c1ef62fb714
 $ nohup geth \
     --datadir=~/data \
     --networkid=12345 \
-    --gasprice=5000 \
+    --miner.gasprice=5000 \
     --syncmode=full \
     --mine \
     --txpool.nolocals=true \
-    --etherbase=$POA_BENEFICIARY \
-    --signer=$SIGNER_ADDR \
-    --unlock=$SIGNER_ADDR \
-    --password=~/data/.passphrase \
+    --miner.etherbase=$POA_BENEFICIARY \
+    --signer=$POA_SIGNER_ADDR \
+    --unlock=$POA_SIGNER_ADDR \
+    --allow-insecure-unlock \
+    --password ~/data/.passphrase \
     --bootnodes=$POA_BOOTNODES \
-    --rpc --rpcaddr 0.0.0.0 \
-    --rpcapi='eth,web3,net' \
-    --rpccorsdomain='*' \
-    --rpcvhosts='*' \
+    --http --http.addr 0.0.0.0 \
+    --http.api='eth,web3,net' \
+    --http.corsdomain='*' \
+    --http.vhosts='*' \
     --ws \
-    --wsorigins '*' \
-    --wsaddr 0.0.0.0 \
-    --wsapi='eth,web3,net' \
+    --ws.origins '*' \
+    --ws.addr 0.0.0.0 \
+    --ws.api='eth,web3,net' \
     --vmodule=p2p=1 \
     >> ~/data/logs/geth.log \
     2>&1 &
 ```
+
+*Warning: `geth` refuses to unlock an account while HTTP/WS RPC is enabled unless `--allow-insecure-unlock` is given. With the signer account unlocked, anyone who can reach the HTTP/WS ports can send transactions from it (`eth_sendTransaction`). Allow those ports only from trusted networks, or run the miner without `--http`/`--ws`.*
 
 
 ### Setup & Run Non-miner node
@@ -358,18 +363,18 @@ $ export POA_BOOTNODES=enode://b85380cd1eaf2f445383117c3899df26bc4ac297b5b84eef4
 $ nohup geth \
     --datadir=~/data \
     --networkid=12345 \
-    --gasprice=5000 \
+    --miner.gasprice=5000 \
     --syncmode=full \
     --txpool.nolocals=true \
     --bootnodes=$POA_BOOTNODES  \
-    --rpc --rpcaddr 0.0.0.0 \
-    --rpcapi='eth,web3,net' \
-    --rpccorsdomain='*' \
-    --rpcvhosts='*' \
+    --http --http.addr 0.0.0.0 \
+    --http.api='eth,web3,net' \
+    --http.corsdomain='*' \
+    --http.vhosts='*' \
     --ws \
-    --wsorigins '*' \
-    --wsaddr 0.0.0.0 \
-    --wsapi='eth,web3,net' \
+    --ws.origins '*' \
+    --ws.addr 0.0.0.0 \
+    --ws.api='eth,web3,net' \
     --vmodule=p2p=1 \
     >> ~/data/logs/geth.log \
     2>&1 &
@@ -381,8 +386,8 @@ Developers or DApp can interact with Luniverse-PoA running miner or non-miner no
 As you can expect, using the JSON-RPC API is the same as go-ethereum.
 
 The standard JSON-RPC API specifications supported by go-ethereum can be found at the following link:
-- [General APIs for DApps](https://github.com/ethereum/wiki/wiki/JSON-RPC)
-- [Management or internal APIs for developer or system](https://github.com/ethereum/go-ethereum/wiki/Management-APIs)
+- [General APIs for DApps](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [Management or internal APIs for developer or system](https://geth.ethereum.org/docs/interacting-with-geth/rpc)
 
 #### Security consideration in RPC service
 Followings are cited from official go-ethereum GitHub. It introduces general guidances about the security consideration in operating the p2p node exposing RPC service.
@@ -395,18 +400,18 @@ These can be turned on/off and configured as you'd expect.
 
 HTTP based JSON-RPC API options:
 
-* `--rpc` Enable the HTTP-RPC server
-* `--rpcaddr` HTTP-RPC server listening interface (default: "localhost")
-* `--rpcport` HTTP-RPC server listening port (default: 8545)
-* `--rpcapi` API's offered over the HTTP-RPC interface (default: "eth,net,web3")
-* `--rpccorsdomain` Comma separated list of domains from which to accept cross origin requests (browser enforced)
+* `--http` Enable the HTTP-RPC server
+* `--http.addr` HTTP-RPC server listening interface (default: "localhost")
+* `--http.port` HTTP-RPC server listening port (default: 8545)
+* `--http.api` API's offered over the HTTP-RPC interface (default: "eth,net,web3")
+* `--http.corsdomain` Comma separated list of domains from which to accept cross origin requests (browser enforced)
+* `--http.vhosts` Comma separated list of virtual hostnames from which to accept requests (default: "localhost")
 * `--ws` Enable the WS-RPC server
-* `--wsaddr` WS-RPC server listening interface (default: "localhost")
-* `--wsport` WS-RPC server listening port (default: 8546)
-* `--wsapi` API's offered over the WS-RPC interface (default: "eth,net,web3")
-* `--wsorigins` Origins from which to accept websockets requests
+* `--ws.addr` WS-RPC server listening interface (default: "localhost")
+* `--ws.port` WS-RPC server listening port (default: 8546)
+* `--ws.api` API's offered over the WS-RPC interface (default: "eth,net,web3")
+* `--ws.origins` Origins from which to accept websockets requests
 * `--ipcdisable` Disable the IPC-RPC server
-* `--ipcapi` API's offered over the IPC-RPC interface (default: "admin,debug,eth,miner,net,personal,shh,txpool,web3")
 * `--ipcpath` Filename for IPC socket/pipe within the datadir (explicit paths escape it)
 
 You'll need to use your own programming environments' capabilities (libraries, tools, etc) to connect
@@ -423,7 +428,7 @@ subvert locally available APIs!**
 
 If you'd like to contribute to Luniverse-PoA protocol, please fork, fix, commit and send a pull request
 for the maintainers to review and merge into the main code base. If you wish to submit more
-complex changes though, please check up with the core devs first on [our gitter channel](https://gitter.im/Lambda256/luniverse-poa)
+complex changes though, please contact us first at [support@lambda256.io](mailto:support@lambda256.io)
 to ensure those changes are in line with the general philosophy of the project and/or get some
 early feedback which can make both your efforts much lighter as well as our review and merge
 procedures quick and simple.

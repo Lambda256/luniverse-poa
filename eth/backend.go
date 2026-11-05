@@ -591,8 +591,8 @@ func (s *Ethereum) SyncMode() downloader.SyncMode {
 func (s *Ethereum) GetPublicBlockChainAPI() *ethapi.PublicBlockChainAPI {
 	return ethapi.NewPublicBlockChainAPI(s.APIBackend)
 }
-func (s Ethereum) GetBlockChain() *core.BlockChain { return s.blockchain }
-func (s Ethereum) SetGasPrice(gasPrice *big.Int)   { s.txPool.SetGasPrice(gasPrice) }
+func (s *Ethereum) GetBlockChain() *core.BlockChain { return s.blockchain }
+func (s *Ethereum) SetGasPrice(gasPrice *big.Int)   { s.txPool.SetGasPrice(gasPrice) }
 
 // Protocols returns all the currently configured
 // network protocols to start.

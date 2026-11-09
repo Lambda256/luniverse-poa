@@ -29,7 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/swarm"
 	"github.com/ethereum/go-ethereum/swarm/api"
 
-	"github.com/docker/docker/pkg/reexec"
+	"github.com/ethereum/go-ethereum/internal/reexec"
 )
 
 func TestDumpConfig(t *testing.T) {

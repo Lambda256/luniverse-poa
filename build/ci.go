@@ -250,6 +250,9 @@ func doInstall(cmdline []string) {
 
 // buildFlags returns the go tool flags for building.
 func buildFlags(env build.Environment) (flags []string) {
+	// Module path is still upstream's, so a VCS pseudo-version (v0.0.0-...) makes
+	// binary scanners match every upstream geth CVE; stamp (devel) instead.
+	flags = append(flags, "-buildvcs=false")
 	var ld []string
 	if env.Commit != "" {
 		ld = append(ld, "-X", "main.gitCommit="+env.Commit)

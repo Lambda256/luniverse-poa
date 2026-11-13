@@ -315,7 +315,7 @@ func (prv *PrivateKey) Decrypt(rand io.Reader, c, s1, s2 []byte) (m []byte, err 
 	switch c[0] {
 	case 2, 3, 4:
 		rLen = (prv.PublicKey.Curve.Params().BitSize + 7) / 4
-		if len(c) < (rLen + hLen + 1) {
+		if len(c) < (rLen + hLen + params.BlockSize) {
 			err = ErrInvalidMessage
 			return
 		}

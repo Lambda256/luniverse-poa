@@ -317,8 +317,8 @@ func ReadHeaderRange(db ethdb.Reader, number uint64, count uint64) []rlp.RawValu
 	if count == 0 {
 		return rlpHeaders
 	}
-	// read remaining from ancients
-	max := count * 700
+	// read remaining from ancients, cap at 2M
+	max := uint64(2 * 1024 * 1024)
 	data, err := db.AncientRange(freezerHeaderTable, i+1-count, count, max)
 	if err == nil && uint64(len(data)) == count {
 		// the data is on the order [h, h+1, .., n] -- reordering needed
